@@ -7,7 +7,8 @@ type Task = { id: number; planId: number | null; title: string; note: string; du
 type Goal = { id: number; planId: number | null; title: string; targetDate: string | null; progress: number; status: string; createdAt: string };
 type Habit = { id: number; planId: number | null; name: string; targetPerWeek: number; color: string; active: boolean; createdAt: string };
 type HabitLog = { id: number; habitId: number; logDate: string; createdAt: string };
-type Section = "overview" | "habits" | "goals" | "week";
+type WeeklyReview = { id: number; weekStart: string; wins: string; blockers: string; lessons: string; nextFocus: string; energy: number; createdAt: string; updatedAt: string };
+type Section = "overview" | "habits" | "goals" | "week" | "review";
 type Modal = "task" | "habit" | "goal" | "plan" | null;
 
 const palette: Record<string, string> = { sage: "#4f7965", blue: "#6683ad", coral: "#c87863", gold: "#b9944e", lavender: "#8a77a7" };
@@ -18,6 +19,7 @@ function iso(date = new Date()) {
   return local.toISOString().slice(0, 10);
 }
 function monthKey(date = new Date()) { return iso(date).slice(0, 7); }
+function mondayOf(date = new Date()) { const next = new Date(date); next.setDate(next.getDate() - ((next.getDay() + 6) % 7)); return iso(next); }
 function niceDate(value: string | null, fallback = "Chưa đặt hạn") {
   if (!value) return fallback;
   return new Intl.DateTimeFormat("vi-VN", { day: "numeric", month: "short", year: "numeric" }).format(new Date(`${value}T12:00:00`));
@@ -29,6 +31,7 @@ export default function Home() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [habits, setHabits] = useState<Habit[]>([]);
   const [logs, setLogs] = useState<HabitLog[]>([]);
+  const [reviews, setReviews] = useState<WeeklyReview[]>([]);
   const [section, setSection] = useState<Section>("overview");
   const [planFilter, setPlanFilter] = useState<number | null>(null);
   const [modal, setModal] = useState<Modal>(null);
@@ -45,16 +48,22 @@ export default function Home() {
   const elapsedDays = isCurrentMonth ? Math.min(Number(today.slice(8, 10)), numberOfDays) : month < today.slice(0, 7) ? numberOfDays : 0;
   const dateAt = (day: number) => `${month}-${String(day).padStart(2, "0")}`;
 
-  async function load() {
-    try {
-      const response = await fetch("/api/data", { cache: "no-store" });
-      const data = await response.json() as { plans?: Plan[]; tasks?: Task[]; goals?: Goal[]; habits?: Habit[]; habitLogs?: HabitLog[]; error?: string };
-      if (!response.ok) throw new Error(data.error || "Không thể tải dữ liệu.");
-      setPlans(data.plans || []); setTasks(data.tasks || []); setGoals(data.goals || []); setHabits(data.habits || []); setLogs(data.habitLogs || []);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "Không thể tải dữ liệu."); }
-    finally { setLoading(false); }
-  }
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    let active = true;
+    fetch("/api/data", { cache: "no-store" })
+      .then(async (response) => {
+        const data = await response.json() as { plans?: Plan[]; tasks?: Task[]; goals?: Goal[]; habits?: Habit[]; habitLogs?: HabitLog[]; weeklyReviews?: WeeklyReview[]; error?: string };
+        if (!response.ok) throw new Error(data.error || "Không thể tải dữ liệu.");
+        return data;
+      })
+      .then((data) => {
+        if (!active) return;
+        setPlans(data.plans || []); setTasks(data.tasks || []); setGoals(data.goals || []); setHabits(data.habits || []); setLogs(data.habitLogs || []); setReviews(data.weeklyReviews || []);
+      })
+      .catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : "Không thể tải dữ liệu."); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
 
   const scopedTasks = tasks.filter((item) => !planFilter || item.planId === planFilter);
   const scopedGoals = goals.filter((item) => !planFilter || item.planId === planFilter);
@@ -79,6 +88,8 @@ export default function Home() {
   const weekTasks = scopedTasks.filter((task) => !!task.dueDate && weekDates.includes(task.dueDate));
   const openGoals = scopedGoals.filter((goal) => goal.status !== "done");
   const selectedPlan = plans.find((plan) => plan.id === planFilter);
+  const currentWeekStart = mondayOf();
+  const currentReview = reviews.find((review) => review.weekStart === currentWeekStart);
 
   async function send(body: Record<string, unknown>) {
     const response = await fetch("/api/data", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -106,6 +117,15 @@ export default function Home() {
     event.preventDefault(); setSaving(true); setError(""); const form = new FormData(event.currentTarget);
     try { const data = await send({ type: "plan", name: form.get("name"), color: form.get("color") }); const plan = data.plan as Plan; setPlans((items) => [...items, plan]); setPlanFilter(plan.id); setModal(null); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "Không thể tạo kế hoạch."); } finally { setSaving(false); }
+  }
+  async function submitReview(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setSaving(true); setError(""); const form = new FormData(event.currentTarget);
+    try {
+      const data = await send({ type: "review", weekStart: currentWeekStart, wins: form.get("wins"), blockers: form.get("blockers"), lessons: form.get("lessons"), nextFocus: form.get("nextFocus"), energy: Number(form.get("energy")) });
+      const review = data.review as WeeklyReview;
+      setReviews((items) => [review, ...items.filter((item) => item.weekStart !== review.weekStart)]);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Không thể lưu review."); }
+    finally { setSaving(false); }
   }
 
   async function toggleHabit(habitId: number, logDate: string) {
@@ -135,7 +155,7 @@ export default function Home() {
 
   const nav = [
     { id: "overview", icon: "⌂", label: "Tổng quan" }, { id: "habits", icon: "▦", label: "Thói quen" },
-    { id: "goals", icon: "◎", label: "Mục tiêu" }, { id: "week", icon: "≡", label: "Kế hoạch tuần" },
+    { id: "goals", icon: "◎", label: "Mục tiêu" }, { id: "week", icon: "≡", label: "Kế hoạch tuần" }, { id: "review", icon: "↻", label: "Review tuần" },
   ] as const;
 
   return <main className="shell">
@@ -149,7 +169,7 @@ export default function Home() {
     </aside>
 
     <section className="main">
-      <header className="topbar"><div className="mobile-brand"><span>P</span><b>planary</b></div><div className="context"><span style={{ background: selectedPlan ? palette[selectedPlan.color] : "#5d756a" }} />{selectedPlan?.name || "Tất cả mảng"}</div><div className="top-actions"><time>{new Intl.DateTimeFormat("vi-VN", { weekday: "long", day: "numeric", month: "long" }).format(new Date())}</time><button onClick={() => setModal(section === "habits" ? "habit" : section === "goals" ? "goal" : "task")}>+ Thêm mới</button></div></header>
+      <header className="topbar"><div className="mobile-brand"><span>P</span><b>planary</b></div><div className="context"><span style={{ background: selectedPlan ? palette[selectedPlan.color] : "#5d756a" }} />{selectedPlan?.name || "Tất cả mảng"}</div><div className="top-actions"><time>{new Intl.DateTimeFormat("vi-VN", { weekday: "long", day: "numeric", month: "long" }).format(new Date())}</time><button onClick={() => section === "review" ? document.getElementById("review-form")?.scrollIntoView({ behavior: "smooth" }) : setModal(section === "habits" ? "habit" : section === "goals" ? "goal" : "task")}>{section === "review" ? "Review ngay" : "+ Thêm mới"}</button></div></header>
       <div className="main-inner">
         {error && <div className="alert" role="alert">{error}<button onClick={() => setError("")}>×</button></div>}
         {loading ? <div className="loading"><span />Đang ghép hệ thống của bạn...</div> : <>
@@ -184,16 +204,30 @@ export default function Home() {
             <section className="week-board">{weekDates.map((date, index) => { const items = scopedTasks.filter((task) => task.dueDate === date); return <article className={`day-column ${date === today ? "today" : ""}`} key={date}><header><span>{index === 0 ? "HÔM NAY" : new Intl.DateTimeFormat("vi-VN", { weekday: "short" }).format(new Date(`${date}T12:00:00`)).toUpperCase()}</span><strong>{Number(date.slice(8, 10))}</strong><small>THÁNG {Number(date.slice(5, 7))}</small></header><div>{items.map((task) => <button className={`week-task ${task.completed ? "done" : ""}`} key={task.id} onClick={() => toggleTask(task)}><i>{task.completed ? "✓" : ""}</i><span>{task.title}<small>{plans.find((plan) => plan.id === task.planId)?.name || "Chung"}</small></span></button>)}{!items.length && <p className="free-day">Khoảng thở</p>}</div></article>})}</section>
             <section className="review-card"><span>REVIEW CUỐI TUẦN</span><h2>Ba câu hỏi giữ kế hoạch sống.</h2><div><p><b>01</b> Điều gì đã tiến triển?</p><p><b>02</b> Điều gì đang bị kẹt?</p><p><b>03</b> Tuần tới bỏ bớt điều gì?</p></div></section>
           </>}
+
+          {section === "review" && <>
+            <section className="page-heading review-heading"><div><p className="eyebrow">KHÉP LẠI ĐỂ TIẾN LÊN</p><h1>Review tuần</h1><p>Dừng lại 10 phút để nhìn sự thật, giữ điều hiệu quả và bỏ bớt điều không còn phù hợp.</p></div><div className="week-badge"><span>TUẦN BẮT ĐẦU</span><strong>{niceDate(currentWeekStart, "")}</strong></div></section>
+            <section className="review-snapshot"><article><span>VIỆC ĐÃ XONG</span><strong>{weekTasks.filter((task) => task.completed).length}<small>/{weekTasks.length}</small></strong><p>trong 7 ngày</p></article><article><span>NHỊP THÓI QUEN</span><strong>{habitRate}%</strong><p>{monthLogs.length} lần check-in tháng này</p></article><article><span>MỤC TIÊU TIẾN TRIỂN</span><strong>{openGoals.filter((goal) => goal.progress > 0).length}</strong><p>mục tiêu đang có đà</p></article><article className="review-streak"><span>LỊCH SỬ REVIEW</span><strong>{reviews.length}</strong><p>tuần đã ghi lại</p></article></section>
+            <section className="review-layout">
+              <form className="review-form" id="review-form" key={currentReview?.updatedAt || currentWeekStart} onSubmit={submitReview}>
+                <div className="review-form-head"><div><span>01</span><div><h2>Nhìn lại tuần này</h2><p>Viết ngắn, thật và cụ thể.</p></div></div><b>{currentReview ? "Đã lưu" : "Bản mới"}</b></div>
+                <div className="review-fields"><label><span>Điều đã làm tốt</span><textarea name="wins" defaultValue={currentReview?.wins} placeholder="Chiến thắng, tiến bộ hoặc khoảnh khắc đáng ghi nhận..." /></label><label><span>Điều đang bị kẹt</span><textarea name="blockers" defaultValue={currentReview?.blockers} placeholder="Trở ngại, sự trì hoãn hay việc đã ùn lại..." /></label><label><span>Bài học rút ra</span><textarea name="lessons" defaultValue={currentReview?.lessons} placeholder="Điều gì nên tiếp tục, thay đổi hoặc dừng lại?" /></label><label><span>Một trọng tâm cho tuần tới</span><textarea name="nextFocus" defaultValue={currentReview?.nextFocus} placeholder="Nếu chỉ làm tốt một điều, đó sẽ là..." /></label></div>
+                <fieldset className="energy-field"><legend>Mức năng lượng tuần này</legend><div>{[1,2,3,4,5].map((value) => <label key={value}><input type="radio" name="energy" value={value} defaultChecked={(currentReview?.energy || 3) === value} /><span>{value}</span><small>{["Cạn", "Thấp", "Ổn", "Tốt", "Rất tốt"][value - 1]}</small></label>)}</div></fieldset>
+                <div className="review-submit"><p>Bạn có thể quay lại chỉnh sửa review này bất cứ lúc nào.</p><button disabled={saving}>{saving ? "Đang lưu..." : currentReview ? "Cập nhật review" : "Hoàn tất review"}</button></div>
+              </form>
+              <aside className="review-side"><section><p className="eyebrow">NGHI THỨC 10 PHÚT</p><h2>Một nhịp review đủ dùng.</h2><ol><li><b>2 phút</b><span>Nhìn số liệu, không phán xét.</span></li><li><b>4 phút</b><span>Ghi lại điều tốt và điểm kẹt.</span></li><li><b>2 phút</b><span>Rút ra một bài học.</span></li><li><b>2 phút</b><span>Chọn một trọng tâm tuần tới.</span></li></ol></section><section className="review-history"><div className="panel-head"><div><p className="eyebrow">LỊCH SỬ</p><h2>Các tuần trước</h2></div></div>{reviews.slice(0, 5).map((review) => <button key={review.id} title={review.nextFocus}><span><b>{niceDate(review.weekStart, "")}</b><small>{review.nextFocus || "Chưa ghi trọng tâm"}</small></span><em>{"●".repeat(review.energy)}{"○".repeat(5-review.energy)}</em></button>)}{!reviews.length && <p className="history-empty">Review đầu tiên sẽ xuất hiện ở đây.</p>}</section></aside>
+            </section>
+          </>}
         </>}
       </div>
     </section>
 
     <nav className="mobile-nav" aria-label="Điều hướng di động">{nav.map((item) => <button key={item.id} className={section === item.id ? "active" : ""} onClick={() => setSection(item.id)}><span>{item.icon}</span>{item.label}</button>)}</nav>
 
-    {modal === "task" && <ModalFrame title="Việc mới" eyebrow="HÀNH ĐỘNG CỤ THỂ" close={() => setModal(null)}><form onSubmit={submitTask}><Field label="Việc bạn sẽ làm"><input name="title" autoFocus required placeholder="Ví dụ: Hoàn thành bản nháp đầu tiên" /></Field><Field label="Ghi chú"><textarea name="note" placeholder="Kết quả mong đợi hoặc bước tiếp theo..." /></Field><div className="form-row"><Field label="Mảng cuộc sống"><PlanSelect plans={plans} selected={planFilter} /></Field><Field label="Ngày thực hiện"><input name="dueDate" type="date" defaultValue={today} /></Field></div><Field label="Mức ưu tiên"><select name="priority" defaultValue="normal"><option value="low">Nhẹ nhàng</option><option value="normal">Bình thường</option><option value="high">Quan trọng</option></select></Field><FormActions saving={saving} close={() => setModal(null)} label="Thêm vào tuần" /></form></ModalFrame>}
-    {modal === "habit" && <ModalFrame title="Thói quen mới" eyebrow="HỆ THỐNG LẶP LẠI" close={() => setModal(null)}><form onSubmit={submitHabit}><Field label="Thói quen bạn muốn xây"><input name="name" autoFocus required placeholder="Ví dụ: Đi bộ 30 phút" /></Field><div className="form-row"><Field label="Thuộc mảng"><PlanSelect plans={plans} selected={planFilter} /></Field><Field label="Tần suất mỗi tuần"><select name="targetPerWeek" defaultValue="5">{[1,2,3,4,5,6,7].map((count) => <option value={count} key={count}>{count} ngày / tuần</option>)}</select></Field></div><ColorPicker /><FormActions saving={saving} close={() => setModal(null)} label="Tạo thói quen" /></form></ModalFrame>}
-    {modal === "goal" && <ModalFrame title="Mục tiêu mới" eyebrow="KẾT QUẢ CÓ THỂ ĐO" close={() => setModal(null)}><form onSubmit={submitGoal}><Field label="Kết quả bạn muốn đạt"><input name="title" autoFocus required placeholder="Ví dụ: Hoàn thành chứng chỉ tiếng Anh B2" /></Field><div className="form-row"><Field label="Thuộc mảng"><PlanSelect plans={plans} selected={planFilter} /></Field><Field label="Đích đến"><input name="targetDate" type="date" /></Field></div><div className="form-hint"><b>Gợi ý:</b> Viết mục tiêu dưới dạng kết quả đã đạt, không phải một danh sách việc.</div><FormActions saving={saving} close={() => setModal(null)} label="Tạo mục tiêu" /></form></ModalFrame>}
-    {modal === "plan" && <ModalFrame title="Mảng cuộc sống mới" eyebrow="MỘT KHÔNG GIAN RIÊNG" close={() => setModal(null)} small><form onSubmit={submitPlan}><Field label="Tên mảng"><input name="name" autoFocus required placeholder="Ví dụ: Học tập" /></Field><ColorPicker /><FormActions saving={saving} close={() => setModal(null)} label="Tạo mảng" /></form></ModalFrame>}
+    {modal === "task" && <ModalFrame title="Việc mới" eyebrow="HÀNH ĐỘNG CỤ THỂ" close={() => setModal(null)}><form onSubmit={submitTask}><Field label="Việc bạn sẽ làm"><input name="title" required placeholder="Ví dụ: Hoàn thành bản nháp đầu tiên" /></Field><Field label="Ghi chú"><textarea name="note" placeholder="Kết quả mong đợi hoặc bước tiếp theo..." /></Field><div className="form-row"><Field label="Mảng cuộc sống"><PlanSelect plans={plans} selected={planFilter} /></Field><Field label="Ngày thực hiện"><input name="dueDate" type="date" defaultValue={today} /></Field></div><Field label="Mức ưu tiên"><select name="priority" defaultValue="normal"><option value="low">Nhẹ nhàng</option><option value="normal">Bình thường</option><option value="high">Quan trọng</option></select></Field><FormActions saving={saving} close={() => setModal(null)} label="Thêm vào tuần" /></form></ModalFrame>}
+    {modal === "habit" && <ModalFrame title="Thói quen mới" eyebrow="HỆ THỐNG LẶP LẠI" close={() => setModal(null)}><form onSubmit={submitHabit}><Field label="Thói quen bạn muốn xây"><input name="name" required placeholder="Ví dụ: Đi bộ 30 phút" /></Field><div className="form-row"><Field label="Thuộc mảng"><PlanSelect plans={plans} selected={planFilter} /></Field><Field label="Tần suất mỗi tuần"><select name="targetPerWeek" defaultValue="5">{[1,2,3,4,5,6,7].map((count) => <option value={count} key={count}>{count} ngày / tuần</option>)}</select></Field></div><ColorPicker /><FormActions saving={saving} close={() => setModal(null)} label="Tạo thói quen" /></form></ModalFrame>}
+    {modal === "goal" && <ModalFrame title="Mục tiêu mới" eyebrow="KẾT QUẢ CÓ THỂ ĐO" close={() => setModal(null)}><form onSubmit={submitGoal}><Field label="Kết quả bạn muốn đạt"><input name="title" required placeholder="Ví dụ: Hoàn thành chứng chỉ tiếng Anh B2" /></Field><div className="form-row"><Field label="Thuộc mảng"><PlanSelect plans={plans} selected={planFilter} /></Field><Field label="Đích đến"><input name="targetDate" type="date" /></Field></div><div className="form-hint"><b>Gợi ý:</b> Viết mục tiêu dưới dạng kết quả đã đạt, không phải một danh sách việc.</div><FormActions saving={saving} close={() => setModal(null)} label="Tạo mục tiêu" /></form></ModalFrame>}
+    {modal === "plan" && <ModalFrame title="Mảng cuộc sống mới" eyebrow="MỘT KHÔNG GIAN RIÊNG" close={() => setModal(null)} small><form onSubmit={submitPlan}><Field label="Tên mảng"><input name="name" required placeholder="Ví dụ: Học tập" /></Field><ColorPicker /><FormActions saving={saving} close={() => setModal(null)} label="Tạo mảng" /></form></ModalFrame>}
   </main>;
 }
 
@@ -202,9 +236,9 @@ function TaskList({ tasks, plans, today, onToggle, onRemove, empty }: { tasks: T
   return <div className="task-list">{tasks.map((task) => { const plan = plans.find((item) => item.id === task.planId); return <div className={`task-item ${task.completed ? "done" : ""}`} key={task.id}><button className="check" onClick={() => onToggle(task)}>{task.completed ? "✓" : ""}</button><div><strong>{task.title}</strong><span>{plan && <i style={{ background: palette[plan.color] || palette.sage }} />}{plan?.name || "Chung"}{task.dueDate && ` · ${task.dueDate === today ? "Hôm nay" : niceDate(task.dueDate, "")}`}</span></div>{task.priority === "high" && <b>QUAN TRỌNG</b>}<button className="delete" onClick={() => onRemove(task.id)}>×</button></div>})}</div>;
 }
 function ModalFrame({ title, eyebrow, close, children, small = false }: { title: string; eyebrow: string; close: () => void; children: React.ReactNode; small?: boolean }) {
-  return <div className="modal-backdrop" onMouseDown={close}><div className={`modal ${small ? "small" : ""}`} role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><p className="eyebrow">{eyebrow}</p><h2>{title}</h2></div><button onClick={close}>×</button></div>{children}</div></div>;
+  return <div className="modal-backdrop"><div className={`modal ${small ? "small" : ""}`} role="dialog" aria-modal="true" aria-label={title}><div className="modal-head"><div><p className="eyebrow">{eyebrow}</p><h2>{title}</h2></div><button aria-label="Đóng" onClick={close}>×</button></div>{children}</div></div>;
 }
 function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="field"><span>{label}</span>{children}</label>; }
 function PlanSelect({ plans, selected }: { plans: Plan[]; selected: number | null }) { return <select name="planId" defaultValue={selected || plans[0]?.id || ""}>{plans.map((plan) => <option value={plan.id} key={plan.id}>{plan.name}</option>)}</select>; }
-function ColorPicker() { return <fieldset className="color-field"><legend>Màu nhận diện</legend><div>{colorNames.map((color, index) => <label key={color}><input type="radio" name="color" value={color} defaultChecked={index === 0} /><span style={{ background: palette[color] }} /></label>)}</div></fieldset>; }
+function ColorPicker() { return <fieldset className="color-field"><legend>Màu nhận diện</legend><div>{colorNames.map((color, index) => <label key={color}><span className="sr-only">Màu {color}</span><input type="radio" name="color" value={color} defaultChecked={index === 0} /><span aria-hidden="true" style={{ background: palette[color] }} /></label>)}</div></fieldset>; }
 function FormActions({ saving, close, label }: { saving: boolean; close: () => void; label: string }) { return <div className="form-actions"><button type="button" onClick={close}>Hủy</button><button className="submit" disabled={saving}>{saving ? "Đang lưu..." : label}</button></div>; }

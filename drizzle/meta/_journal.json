@@ -15,6 +15,13 @@
       "when": 1786288252858,
       "tag": "0001_good_puma",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1786289402738,
+      "tag": "0002_tough_punisher",
+      "breakpoints": true
     }
   ]
 }

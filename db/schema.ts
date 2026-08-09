@@ -67,3 +67,19 @@ export const habitLogs = sqliteTable(
     index("idx_habit_logs_date").on(table.logDate),
   ],
 );
+
+export const weeklyReviews = sqliteTable(
+  "weekly_reviews",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    weekStart: text("week_start").notNull(),
+    wins: text("wins").notNull().default(""),
+    blockers: text("blockers").notNull().default(""),
+    lessons: text("lessons").notNull().default(""),
+    nextFocus: text("next_focus").notNull().default(""),
+    energy: integer("energy").notNull().default(3),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [uniqueIndex("idx_weekly_reviews_week_start").on(table.weekStart)],
+);

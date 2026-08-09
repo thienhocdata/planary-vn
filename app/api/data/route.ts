@@ -1,6 +1,6 @@
 import { and, asc, desc, eq } from "drizzle-orm";
 import { ensureDb, getDb } from "../../../db";
-import { goals, habitLogs, habits, plans, tasks } from "../../../db/schema";
+import { goals, habitLogs, habits, plans, tasks, weeklyReviews } from "../../../db/schema";
 
 const starterPlans = [
   { name: "Cá nhân", color: "sage" },
@@ -30,12 +30,13 @@ async function snapshot() {
   if (!habitRows.length) {
     habitRows = await db.insert(habits).values(starterHabits.map((habit, index) => ({ ...habit, planId: planRows[index === 1 || index === 4 ? 2 : index === 2 || index === 3 ? 1 : 3]?.id || null }))).returning();
   }
-  const [taskRows, goalRows, logRows] = await Promise.all([
+  const [taskRows, goalRows, logRows, reviewRows] = await Promise.all([
     db.select().from(tasks).orderBy(asc(tasks.completed), asc(tasks.dueDate), desc(tasks.id)),
     db.select().from(goals).orderBy(asc(goals.status), asc(goals.targetDate), desc(goals.id)),
     db.select().from(habitLogs).orderBy(asc(habitLogs.logDate)),
+    db.select().from(weeklyReviews).orderBy(desc(weeklyReviews.weekStart)).limit(52),
   ]);
-  return { plans: planRows, tasks: taskRows, goals: goalRows, habits: habitRows, habitLogs: logRows };
+  return { plans: planRows, tasks: taskRows, goals: goalRows, habits: habitRows, habitLogs: logRows, weeklyReviews: reviewRows };
 }
 
 export async function GET() {
@@ -73,6 +74,21 @@ export async function POST(request: Request) {
       if (existing) { await db.delete(habitLogs).where(eq(habitLogs.id, existing.id)); return Response.json({ completed: false, habitId, logDate }); }
       const [log] = await db.insert(habitLogs).values({ habitId, logDate }).returning();
       return Response.json({ completed: true, log });
+    }
+    if (body.type === "review") {
+      const weekStart = String(body.weekStart || "");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) return Response.json({ error: "Tuần review không hợp lệ." }, { status: 400 });
+      const values = {
+        weekStart,
+        wins: String(body.wins || "").trim(),
+        blockers: String(body.blockers || "").trim(),
+        lessons: String(body.lessons || "").trim(),
+        nextFocus: String(body.nextFocus || "").trim(),
+        energy: Math.min(5, Math.max(1, Number(body.energy) || 3)),
+        updatedAt: new Date().toISOString(),
+      };
+      const [review] = await db.insert(weeklyReviews).values(values).onConflictDoUpdate({ target: weeklyReviews.weekStart, set: values }).returning();
+      return Response.json({ review });
     }
     const title = String(body.title || "").trim();
     if (!title) return Response.json({ error: "Nội dung công việc là bắt buộc." }, { status: 400 });

@@ -1,9 +1,13 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Be_Vietnam_Pro } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
-const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
+const beVietnamPro = Be_Vietnam_Pro({
+  variable: "--font-be-vietnam",
+  subsets: ["latin", "vietnamese"],
+  weight: ["400", "500", "600", "700", "800"],
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Planary — Từ mục tiêu đến nhịp sống",
@@ -11,16 +15,16 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Planary — Từ mục tiêu đến nhịp sống",
     description: "Mục tiêu → Tuần → Hôm nay → Review",
-    images: ["https://planary-vn-dashboard.vanthien04032004.chatgpt.site/og-v2.png"],
+    images: ["https://planary-vn-dashboard.vanthien04032004.chatgpt.site/og-v3.png"],
   },
   twitter: {
     card: "summary_large_image",
     title: "Planary — Từ mục tiêu đến nhịp sống",
     description: "Mục tiêu → Tuần → Hôm nay → Review",
-    images: ["https://planary-vn-dashboard.vanthien04032004.chatgpt.site/og-v2.png"],
+    images: ["https://planary-vn-dashboard.vanthien04032004.chatgpt.site/og-v3.png"],
   },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="vi"><body className={`${geistSans.variable} ${geistMono.variable}`}>{children}</body></html>;
+  return <html lang="vi"><body className={beVietnamPro.variable}>{children}</body></html>;
 }

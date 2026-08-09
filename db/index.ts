@@ -62,6 +62,18 @@ export async function ensureDb() {
     )`),
     d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_habit_logs_habit_date ON habit_logs(habit_id, log_date)"),
     d1.prepare("CREATE INDEX IF NOT EXISTS idx_habit_logs_date ON habit_logs(log_date)"),
+    d1.prepare(`CREATE TABLE IF NOT EXISTS weekly_reviews (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      week_start TEXT NOT NULL,
+      wins TEXT NOT NULL DEFAULT '',
+      blockers TEXT NOT NULL DEFAULT '',
+      lessons TEXT NOT NULL DEFAULT '',
+      next_focus TEXT NOT NULL DEFAULT '',
+      energy INTEGER NOT NULL DEFAULT 3,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_weekly_reviews_week_start ON weekly_reviews(week_start)"),
   ]);
   await d1.prepare("PRAGMA optimize").run();
 }
