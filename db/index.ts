@@ -34,6 +34,34 @@ export async function ensureDb() {
     )`),
     d1.prepare("CREATE INDEX IF NOT EXISTS idx_tasks_plan_id ON tasks(plan_id)"),
     d1.prepare("CREATE INDEX IF NOT EXISTS idx_tasks_completed_due_date ON tasks(completed, due_date)"),
+    d1.prepare(`CREATE TABLE IF NOT EXISTS goals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      plan_id INTEGER REFERENCES plans(id) ON DELETE SET NULL,
+      title TEXT NOT NULL,
+      target_date TEXT,
+      progress INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    d1.prepare("CREATE INDEX IF NOT EXISTS idx_goals_plan_id_status ON goals(plan_id, status)"),
+    d1.prepare(`CREATE TABLE IF NOT EXISTS habits (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      plan_id INTEGER REFERENCES plans(id) ON DELETE SET NULL,
+      name TEXT NOT NULL,
+      target_per_week INTEGER NOT NULL DEFAULT 5,
+      color TEXT NOT NULL DEFAULT 'sage',
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    d1.prepare("CREATE INDEX IF NOT EXISTS idx_habits_active ON habits(active)"),
+    d1.prepare(`CREATE TABLE IF NOT EXISTS habit_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      habit_id INTEGER NOT NULL REFERENCES habits(id) ON DELETE CASCADE,
+      log_date TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_habit_logs_habit_date ON habit_logs(habit_id, log_date)"),
+    d1.prepare("CREATE INDEX IF NOT EXISTS idx_habit_logs_date ON habit_logs(log_date)"),
   ]);
   await d1.prepare("PRAGMA optimize").run();
 }

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const plans = sqliteTable("plans", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -23,5 +23,47 @@ export const tasks = sqliteTable(
   (table) => [
     index("idx_tasks_plan_id").on(table.planId),
     index("idx_tasks_completed_due_date").on(table.completed, table.dueDate),
+  ],
+);
+
+export const goals = sqliteTable(
+  "goals",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    planId: integer("plan_id").references(() => plans.id, { onDelete: "set null" }),
+    title: text("title").notNull(),
+    targetDate: text("target_date"),
+    progress: integer("progress").notNull().default(0),
+    status: text("status").notNull().default("active"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [index("idx_goals_plan_id_status").on(table.planId, table.status)],
+);
+
+export const habits = sqliteTable(
+  "habits",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    planId: integer("plan_id").references(() => plans.id, { onDelete: "set null" }),
+    name: text("name").notNull(),
+    targetPerWeek: integer("target_per_week").notNull().default(5),
+    color: text("color").notNull().default("sage"),
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [index("idx_habits_active").on(table.active)],
+);
+
+export const habitLogs = sqliteTable(
+  "habit_logs",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    habitId: integer("habit_id").notNull().references(() => habits.id, { onDelete: "cascade" }),
+    logDate: text("log_date").notNull(),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("idx_habit_logs_habit_date").on(table.habitId, table.logDate),
+    index("idx_habit_logs_date").on(table.logDate),
   ],
 );

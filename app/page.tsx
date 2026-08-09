@@ -3,203 +3,208 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type Plan = { id: number; name: string; color: string; createdAt: string };
-type Task = {
-  id: number;
-  planId: number | null;
-  title: string;
-  note: string;
-  dueDate: string | null;
-  priority: "low" | "normal" | "high";
-  completed: boolean;
-  createdAt: string;
-};
-type View = "today" | "week" | "all" | "completed" | `plan:${number}`;
+type Task = { id: number; planId: number | null; title: string; note: string; dueDate: string | null; priority: string; completed: boolean; createdAt: string };
+type Goal = { id: number; planId: number | null; title: string; targetDate: string | null; progress: number; status: string; createdAt: string };
+type Habit = { id: number; planId: number | null; name: string; targetPerWeek: number; color: string; active: boolean; createdAt: string };
+type HabitLog = { id: number; habitId: number; logDate: string; createdAt: string };
+type Section = "overview" | "habits" | "goals" | "week";
+type Modal = "task" | "habit" | "goal" | "plan" | null;
 
-const colors = ["sage", "blue", "coral", "gold", "lavender"];
-const colorHex: Record<string, string> = {
-  sage: "#59816e", blue: "#6680a8", coral: "#bd765f", gold: "#b3914d", lavender: "#8a78a5",
-};
+const palette: Record<string, string> = { sage: "#4f7965", blue: "#6683ad", coral: "#c87863", gold: "#b9944e", lavender: "#8a77a7" };
+const colorNames = ["sage", "blue", "coral", "gold", "lavender"];
 
-function isoDate(date = new Date()) {
+function iso(date = new Date()) {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return local.toISOString().slice(0, 10);
 }
-
-function greeting() {
-  const hour = new Date().getHours();
-  if (hour < 11) return "Chào buổi sáng";
-  if (hour < 18) return "Chào buổi chiều";
-  return "Chào buổi tối";
+function monthKey(date = new Date()) { return iso(date).slice(0, 7); }
+function niceDate(value: string | null, fallback = "Chưa đặt hạn") {
+  if (!value) return fallback;
+  return new Intl.DateTimeFormat("vi-VN", { day: "numeric", month: "short", year: "numeric" }).format(new Date(`${value}T12:00:00`));
 }
 
 export default function Home() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [view, setView] = useState<View>("today");
-  const [taskModal, setTaskModal] = useState(false);
-  const [planModal, setPlanModal] = useState(false);
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [habits, setHabits] = useState<Habit[]>([]);
+  const [logs, setLogs] = useState<HabitLog[]>([]);
+  const [section, setSection] = useState<Section>("overview");
+  const [planFilter, setPlanFilter] = useState<number | null>(null);
+  const [modal, setModal] = useState<Modal>(null);
+  const [month, setMonth] = useState(monthKey());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  const today = iso();
+  const [year, monthNumber] = month.split("-").map(Number);
+  const numberOfDays = new Date(year, monthNumber, 0).getDate();
+  const days = Array.from({ length: numberOfDays }, (_, index) => index + 1);
+  const isCurrentMonth = month === today.slice(0, 7);
+  const elapsedDays = isCurrentMonth ? Math.min(Number(today.slice(8, 10)), numberOfDays) : month < today.slice(0, 7) ? numberOfDays : 0;
+  const dateAt = (day: number) => `${month}-${String(day).padStart(2, "0")}`;
+
   async function load() {
     try {
       const response = await fetch("/api/data", { cache: "no-store" });
-      const data = await response.json() as { plans?: Plan[]; tasks?: Task[]; error?: string };
+      const data = await response.json() as { plans?: Plan[]; tasks?: Task[]; goals?: Goal[]; habits?: Habit[]; habitLogs?: HabitLog[]; error?: string };
       if (!response.ok) throw new Error(data.error || "Không thể tải dữ liệu.");
-      setPlans(data.plans || []);
-      setTasks(data.tasks || []);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Không thể tải dữ liệu.");
-    } finally {
-      setLoading(false);
-    }
+      setPlans(data.plans || []); setTasks(data.tasks || []); setGoals(data.goals || []); setHabits(data.habits || []); setLogs(data.habitLogs || []);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Không thể tải dữ liệu."); }
+    finally { setLoading(false); }
   }
-
   useEffect(() => { void load(); }, []);
 
-  const today = isoDate();
-  const weekEnd = isoDate(new Date(Date.now() + 6 * 86400000));
-  const visible = useMemo(() => tasks.filter((task) => {
-    if (view === "today") return !task.completed && task.dueDate === today;
-    if (view === "week") return !task.completed && !!task.dueDate && task.dueDate >= today && task.dueDate <= weekEnd;
-    if (view === "all") return !task.completed;
-    if (view === "completed") return task.completed;
-    return task.planId === Number(view.split(":")[1]);
-  }), [tasks, view, today, weekEnd]);
+  const scopedTasks = tasks.filter((item) => !planFilter || item.planId === planFilter);
+  const scopedGoals = goals.filter((item) => !planFilter || item.planId === planFilter);
+  const scopedHabits = habits.filter((item) => !planFilter || item.planId === planFilter);
+  const monthLogs = logs.filter((log) => log.logDate.startsWith(month) && scopedHabits.some((habit) => habit.id === log.habitId));
+  const logKeys = useMemo(() => new Set(logs.map((log) => `${log.habitId}:${log.logDate}`)), [logs]);
+  const expectedFor = (habit: Habit) => Math.max(1, Math.ceil(elapsedDays * habit.targetPerWeek / 7));
+  const checksFor = (habit: Habit) => monthLogs.filter((log) => log.habitId === habit.id).length;
+  const rateFor = (habit: Habit) => elapsedDays ? Math.min(100, Math.round(checksFor(habit) / expectedFor(habit) * 100)) : 0;
+  const totalExpected = scopedHabits.reduce((sum, habit) => sum + expectedFor(habit), 0);
+  const habitRate = totalExpected ? Math.min(100, Math.round(monthLogs.length / totalExpected * 100)) : 0;
+  const dailyCounts = days.map((day) => monthLogs.filter((log) => log.logDate === dateAt(day)).length);
+  const maxDaily = Math.max(1, ...dailyCounts);
+  const weekly = [1, 8, 15, 22, 29].map((start, index) => {
+    const end = Math.min(start + 6, numberOfDays); const active = monthLogs.filter((log) => Number(log.logDate.slice(8, 10)) >= start && Number(log.logDate.slice(8, 10)) <= end).length;
+    const availableDays = Math.max(0, Math.min(elapsedDays, end) - start + 1); const target = scopedHabits.reduce((sum, habit) => sum + Math.ceil(availableDays * habit.targetPerWeek / 7), 0);
+    return { label: `Tuần ${index + 1}`, active, rate: target ? Math.min(100, Math.round(active / target * 100)) : 0 };
+  }).filter((_, index) => index * 7 + 1 <= numberOfDays);
+  const topHabits = [...scopedHabits].sort((a, b) => rateFor(b) - rateFor(a)).slice(0, 5);
+  const todayTasks = scopedTasks.filter((task) => !task.completed && task.dueDate === today);
+  const weekDates = Array.from({ length: 7 }, (_, index) => { const date = new Date(); date.setDate(date.getDate() + index); return iso(date); });
+  const weekTasks = scopedTasks.filter((task) => !!task.dueDate && weekDates.includes(task.dueDate));
+  const openGoals = scopedGoals.filter((goal) => goal.status !== "done");
+  const selectedPlan = plans.find((plan) => plan.id === planFilter);
 
-  const dueToday = tasks.filter((task) => !task.completed && task.dueDate === today).length;
-  const done = tasks.filter((task) => task.completed).length;
-  const completion = tasks.length ? Math.round(done / tasks.length * 100) : 0;
-  const selectedPlan = view.startsWith("plan:") ? plans.find((plan) => plan.id === Number(view.split(":")[1])) : undefined;
-  const titles: Record<string, [string, string]> = {
-    today: ["Hôm nay", "Chỉ những việc quan trọng, trong một ngày vừa đủ."],
-    week: ["7 ngày tới", "Nhìn trước để tuần này luôn trong tầm tay."],
-    all: ["Tất cả việc", "Mọi điều bạn đang muốn hoàn thành."],
-    completed: ["Đã hoàn thành", "Những bước tiến bạn đã tạo ra."],
-  };
-  const [heading, subheading] = selectedPlan
-    ? [selectedPlan.name, `Kế hoạch ${selectedPlan.name.toLowerCase()} của riêng bạn.`]
-    : titles[view];
-
-  async function addTask(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSaving(true); setError("");
-    const form = new FormData(event.currentTarget);
-    try {
-      const response = await fetch("/api/data", {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          type: "task", title: form.get("title"), note: form.get("note"),
-          dueDate: form.get("dueDate"), planId: Number(form.get("planId")) || null,
-          priority: form.get("priority"),
-        }),
-      });
-      const data = await response.json() as { task?: Task; error?: string };
-      if (!response.ok || !data.task) throw new Error(data.error || "Không thể thêm công việc.");
-      setTasks((items) => [data.task!, ...items]);
-      setTaskModal(false);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "Không thể thêm công việc."); }
-    finally { setSaving(false); }
+  async function send(body: Record<string, unknown>) {
+    const response = await fetch("/api/data", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const data = await response.json() as Record<string, unknown> & { error?: string };
+    if (!response.ok) throw new Error(data.error || "Không thể lưu thay đổi.");
+    return data;
   }
 
-  async function addPlan(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSaving(true); setError("");
-    const form = new FormData(event.currentTarget);
-    try {
-      const response = await fetch("/api/data", {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ type: "plan", name: form.get("name"), color: form.get("color") }),
-      });
-      const data = await response.json() as { plan?: Plan; error?: string };
-      if (!response.ok || !data.plan) throw new Error(data.error || "Không thể tạo kế hoạch.");
-      setPlans((items) => [...items, data.plan!]);
-      setView(`plan:${data.plan.id}`);
-      setPlanModal(false);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "Không thể tạo kế hoạch."); }
-    finally { setSaving(false); }
+  async function submitTask(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setSaving(true); setError(""); const form = new FormData(event.currentTarget);
+    try { const data = await send({ type: "task", title: form.get("title"), note: form.get("note"), planId: Number(form.get("planId")) || null, dueDate: form.get("dueDate"), priority: form.get("priority") }); setTasks((items) => [data.task as Task, ...items]); setModal(null); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "Không thể thêm việc."); } finally { setSaving(false); }
+  }
+  async function submitHabit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setSaving(true); setError(""); const form = new FormData(event.currentTarget);
+    try { const data = await send({ type: "habit", name: form.get("name"), planId: Number(form.get("planId")) || null, targetPerWeek: Number(form.get("targetPerWeek")), color: form.get("color") }); setHabits((items) => [...items, data.habit as Habit]); setModal(null); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "Không thể thêm thói quen."); } finally { setSaving(false); }
+  }
+  async function submitGoal(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setSaving(true); setError(""); const form = new FormData(event.currentTarget);
+    try { const data = await send({ type: "goal", title: form.get("title"), planId: Number(form.get("planId")) || null, targetDate: form.get("targetDate") }); setGoals((items) => [data.goal as Goal, ...items]); setModal(null); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "Không thể thêm mục tiêu."); } finally { setSaving(false); }
+  }
+  async function submitPlan(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setSaving(true); setError(""); const form = new FormData(event.currentTarget);
+    try { const data = await send({ type: "plan", name: form.get("name"), color: form.get("color") }); const plan = data.plan as Plan; setPlans((items) => [...items, plan]); setPlanFilter(plan.id); setModal(null); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "Không thể tạo kế hoạch."); } finally { setSaving(false); }
   }
 
+  async function toggleHabit(habitId: number, logDate: string) {
+    const key = `${habitId}:${logDate}`; const checked = logKeys.has(key); const previous = logs;
+    setLogs((items) => checked ? items.filter((log) => !(log.habitId === habitId && log.logDate === logDate)) : [...items, { id: -Date.now(), habitId, logDate, createdAt: "" }]);
+    try { await send({ type: "habitLog", habitId, logDate }); }
+    catch { setLogs(previous); setError("Chưa thể lưu check-in."); }
+  }
   async function toggleTask(task: Task) {
-    const completed = !task.completed;
-    setTasks((items) => items.map((item) => item.id === task.id ? { ...item, completed } : item));
-    const response = await fetch("/api/data", {
-      method: "PATCH", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id: task.id, completed }),
-    });
-    if (!response.ok) { setTasks((items) => items.map((item) => item.id === task.id ? task : item)); setError("Chưa thể cập nhật công việc."); }
+    const completed = !task.completed; const previous = tasks; setTasks((items) => items.map((item) => item.id === task.id ? { ...item, completed } : item));
+    const response = await fetch("/api/data", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: task.id, completed }) });
+    if (!response.ok) { setTasks(previous); setError("Chưa thể cập nhật công việc."); }
   }
-
-  async function removeTask(id: number) {
-    const previous = tasks;
-    setTasks((items) => items.filter((item) => item.id !== id));
-    const response = await fetch(`/api/data?id=${id}`, { method: "DELETE" });
-    if (!response.ok) { setTasks(previous); setError("Chưa thể xóa công việc."); }
+  async function moveGoal(goal: Goal, direction: number) {
+    const progress = Math.min(100, Math.max(0, goal.progress + direction)); const previous = goals; setGoals((items) => items.map((item) => item.id === goal.id ? { ...item, progress, status: progress === 100 ? "done" : "active" } : item));
+    const response = await fetch("/api/data", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ type: "goal", id: goal.id, progress }) });
+    if (!response.ok) { setGoals(previous); setError("Chưa thể cập nhật mục tiêu."); }
   }
+  async function remove(kind: "task" | "habit" | "goal", id: number) {
+    const response = await fetch(`/api/data?kind=${kind}&id=${id}`, { method: "DELETE" });
+    if (!response.ok) return setError("Chưa thể xóa mục này.");
+    if (kind === "task") setTasks((items) => items.filter((item) => item.id !== id));
+    if (kind === "habit") setHabits((items) => items.filter((item) => item.id !== id));
+    if (kind === "goal") setGoals((items) => items.filter((item) => item.id !== id));
+  }
+  function shiftMonth(offset: number) { const next = new Date(year, monthNumber - 1 + offset, 1); setMonth(monthKey(next)); }
 
-  return (
-    <main className="app-shell">
-      <aside className="sidebar">
-        <div className="brand"><span className="brand-mark">P</span><b>planary</b></div>
-        <button className="new-task" onClick={() => setTaskModal(true)}><span>+</span> Thêm việc</button>
-        <nav aria-label="Chế độ xem">
-          <p>TỔNG QUAN</p>
-          <button className={view === "today" ? "active" : ""} onClick={() => setView("today")}><span>☀</span> Hôm nay <b>{dueToday || ""}</b></button>
-          <button className={view === "week" ? "active" : ""} onClick={() => setView("week")}><span>▦</span> 7 ngày tới</button>
-          <button className={view === "all" ? "active" : ""} onClick={() => setView("all")}><span>≡</span> Tất cả</button>
-          <button className={view === "completed" ? "active" : ""} onClick={() => setView("completed")}><span>✓</span> Đã xong</button>
-        </nav>
-        <nav className="plan-nav" aria-label="Kế hoạch">
-          <div className="nav-title"><p>KẾ HOẠCH</p><button onClick={() => setPlanModal(true)} aria-label="Tạo kế hoạch">+</button></div>
-          {plans.map((plan) => <button key={plan.id} className={view === `plan:${plan.id}` ? "active" : ""} onClick={() => setView(`plan:${plan.id}`)}><i style={{ background: colorHex[plan.color] || colorHex.sage }} />{plan.name}<b>{tasks.filter((task) => task.planId === plan.id && !task.completed).length || ""}</b></button>)}
-        </nav>
-        <div className="sidebar-foot"><span>MN</span><div><b>Không gian của tôi</b><small>Riêng tư & đã lưu</small></div></div>
-      </aside>
+  const nav = [
+    { id: "overview", icon: "⌂", label: "Tổng quan" }, { id: "habits", icon: "▦", label: "Thói quen" },
+    { id: "goals", icon: "◎", label: "Mục tiêu" }, { id: "week", icon: "≡", label: "Kế hoạch tuần" },
+  ] as const;
 
-      <section className="content">
-        <header className="mobile-header"><div className="brand"><span className="brand-mark">P</span><b>planary</b></div><button onClick={() => setTaskModal(true)}>+ Thêm việc</button></header>
-        <div className="content-inner">
-          <section className="welcome">
-            <div><p className="date-line">{new Intl.DateTimeFormat("vi-VN", { weekday: "long", day: "numeric", month: "long" }).format(new Date()).toUpperCase()}</p><h1>{view === "today" ? `${greeting()}, Minh.` : heading}</h1><p>{view === "today" ? subheading : subheading}</p></div>
-            <div className="focus-ring" style={{ "--progress": `${completion * 3.6}deg` } as React.CSSProperties}><div><strong>{completion}%</strong><span>đã xong</span></div></div>
-          </section>
+  return <main className="shell">
+    <aside className="sidebar">
+      <div className="brand"><span>P</span><div><b>planary</b><small>personal system</small></div></div>
+      <button className="quick-add" onClick={() => setModal("task")}><span>+</span> Ghi nhanh một việc</button>
+      <nav aria-label="Không gian chính"><p>HỆ THỐNG CỦA TÔI</p>{nav.map((item) => <button key={item.id} className={section === item.id ? "active" : ""} onClick={() => setSection(item.id)}><span>{item.icon}</span>{item.label}{item.id === "habits" && <b>{habitRate}%</b>}</button>)}</nav>
+      <nav className="areas" aria-label="Mảng cuộc sống"><div className="nav-heading"><p>MẢNG CUỘC SỐNG</p><button onClick={() => setModal("plan")}>+</button></div><button className={!planFilter ? "active" : ""} onClick={() => setPlanFilter(null)}><i className="all-dot" />Tất cả</button>{plans.map((plan) => <button key={plan.id} className={planFilter === plan.id ? "active" : ""} onClick={() => setPlanFilter(plan.id)}><i style={{ background: palette[plan.color] || palette.sage }} />{plan.name}</button>)}</nav>
+      <div className="system-note"><span>NHỊP PLANARY</span><p>Mục tiêu → Tuần → Hôm nay → Review</p></div>
+      <div className="profile"><span>MN</span><div><b>Không gian cá nhân</b><small>Đã lưu an toàn</small></div></div>
+    </aside>
 
-          <section className="quick-stats" aria-label="Tổng quan cá nhân">
-            <article><span>HÔM NAY</span><strong>{dueToday}</strong><small>việc cần làm</small></article>
-            <article><span>ĐÃ HOÀN THÀNH</span><strong>{done}</strong><small>việc tổng cộng</small></article>
-            <article><span>KẾ HOẠCH ĐANG CÓ</span><strong>{plans.length}</strong><small>mảng cuộc sống</small></article>
-            <blockquote>“Một ngày nhẹ nhàng bắt đầu từ một kế hoạch rõ ràng.”</blockquote>
-          </section>
+    <section className="main">
+      <header className="topbar"><div className="mobile-brand"><span>P</span><b>planary</b></div><div className="context"><span style={{ background: selectedPlan ? palette[selectedPlan.color] : "#5d756a" }} />{selectedPlan?.name || "Tất cả mảng"}</div><div className="top-actions"><time>{new Intl.DateTimeFormat("vi-VN", { weekday: "long", day: "numeric", month: "long" }).format(new Date())}</time><button onClick={() => setModal(section === "habits" ? "habit" : section === "goals" ? "goal" : "task")}>+ Thêm mới</button></div></header>
+      <div className="main-inner">
+        {error && <div className="alert" role="alert">{error}<button onClick={() => setError("")}>×</button></div>}
+        {loading ? <div className="loading"><span />Đang ghép hệ thống của bạn...</div> : <>
 
-          {error && <div className="error-banner" role="alert">{error}<button onClick={() => setError("")}>×</button></div>}
+          {section === "overview" && <>
+            <section className="hero"><div><p className="eyebrow">TỔNG QUAN · {new Intl.DateTimeFormat("vi-VN", { month: "long", year: "numeric" }).format(new Date())}</p><h1>Biến kế hoạch<br />thành <em>nhịp sống.</em></h1><p>Một bức tranh liền mạch từ mục tiêu dài hạn đến việc bạn làm mỗi ngày.</p></div><div className="month-score" style={{ "--score": `${habitRate * 3.6}deg` } as React.CSSProperties}><div><strong>{habitRate}%</strong><span>nhịp tháng</span></div></div></section>
+            <section className="metric-strip"><article><span>CHECK-IN THÁNG NÀY</span><strong>{monthLogs.length}</strong><small>lần giữ nhịp</small></article><article><span>VIỆC HÔM NAY</span><strong>{todayTasks.length}</strong><small>{todayTasks.filter((item) => item.priority === "high").length} việc quan trọng</small></article><article><span>MỤC TIÊU ĐANG CHẠY</span><strong>{openGoals.length}</strong><small>{goals.filter((goal) => goal.status === "done").length} đã về đích</small></article><article className="principle"><span>NGUYÊN TẮC THÁNG</span><p>Tiến bộ nhỏ, đều đặn<br />quan trọng hơn hoàn hảo.</p></article></section>
+            <section className="analytics-grid">
+              <article className="panel trend"><div className="panel-head"><div><p className="eyebrow">BIẾN ĐỘNG HÀNG NGÀY</p><h2>Nhịp thói quen</h2></div><button onClick={() => setSection("habits")}>Mở bảng theo dõi →</button></div><div className="daily-chart">{dailyCounts.map((count, index) => <div className="bar-column" key={index}><i style={{ height: `${Math.max(4, count / maxDaily * 100)}%` }} /><span>{[0, 6, 13, 20, 27, numberOfDays - 1].includes(index) ? index + 1 : ""}</span></div>)}</div><div className="chart-foot"><span><i /> Mỗi cột là số lần check-in trong ngày</span><b>Cao nhất {maxDaily} lần/ngày</b></div></article>
+              <article className="panel completion"><p className="eyebrow">CƠ CẤU HOÀN THÀNH</p><div className="big-ring" style={{ "--score": `${habitRate * 3.6}deg` } as React.CSSProperties}><div><strong>{monthLogs.length}</strong><span>/ {totalExpected || 0} mục tiêu</span></div></div><h3>{habitRate >= 80 ? "Nhịp rất tốt" : habitRate >= 50 ? "Đang tạo đà" : "Cứ bắt đầu nhỏ"}</h3><p>{habitRate}% khối lượng thói quen dự kiến đã hoàn thành.</p></article>
+              <article className="panel week-panel"><div className="panel-head"><div><p className="eyebrow">TỔNG QUAN THEO TUẦN</p><h2>Độ ổn định</h2></div></div><div className="weekly-bars">{weekly.map((item) => <div key={item.label}><div className="week-bar"><i style={{ height: `${Math.max(5, item.rate)}%` }} /></div><strong>{item.rate}%</strong><span>{item.label.replace("Tuần ", "T")}</span></div>)}</div></article>
+              <article className="panel top-panel"><div className="panel-head"><div><p className="eyebrow">TOP THÓI QUEN</p><h2>Đang giữ nhịp tốt</h2></div></div><div className="rank-list">{topHabits.map((habit, index) => <div key={habit.id}><b>{String(index + 1).padStart(2, "0")}</b><span><strong>{habit.name}</strong><small>{checksFor(habit)} lần trong tháng</small></span><em>{rateFor(habit)}%</em></div>)}</div></article>
+            </section>
+            <section className="two-columns"><article className="panel today-panel"><div className="panel-head"><div><p className="eyebrow">HÀNH ĐỘNG</p><h2>Việc quan trọng hôm nay</h2></div><button onClick={() => setModal("task")}>+ Thêm việc</button></div><TaskList tasks={todayTasks} plans={plans} today={today} onToggle={toggleTask} onRemove={(id) => remove("task", id)} empty="Hôm nay chưa có việc. Hãy chọn 1–3 việc thật sự quan trọng." /></article><article className="panel goals-preview"><div className="panel-head"><div><p className="eyebrow">KẾT QUẢ</p><h2>Mục tiêu trọng tâm</h2></div><button onClick={() => setSection("goals")}>Xem tất cả →</button></div>{openGoals.slice(0, 3).map((goal) => <div className="goal-row" key={goal.id}><div><strong>{goal.title}</strong><small>{niceDate(goal.targetDate)}</small></div><span><i style={{ width: `${goal.progress}%` }} /></span><b>{goal.progress}%</b></div>)}{!openGoals.length && <div className="compact-empty"><b>Chưa có mục tiêu trọng tâm.</b><button onClick={() => setModal("goal")}>Tạo mục tiêu đầu tiên</button></div>}</article></section>
+          </>}
 
-          <section className="task-section">
-            <div className="section-title"><div><p className="eyebrow">VIỆC CẦN CHÚ Ý</p><h2>{heading}</h2></div><button className="outline" onClick={() => setTaskModal(true)}>+ Thêm việc</button></div>
-            <div className="task-list">
-              {loading && <div className="state"><span className="loader" />Đang chuẩn bị không gian của bạn...</div>}
-              {!loading && visible.map((task) => {
-                const plan = plans.find((item) => item.id === task.planId);
-                return <article className={`task ${task.completed ? "is-done" : ""}`} key={task.id}>
-                  <button className="task-check" onClick={() => toggleTask(task)} aria-label={task.completed ? `Mở lại ${task.title}` : `Hoàn thành ${task.title}`}>{task.completed ? "✓" : ""}</button>
-                  <div className="task-copy"><strong>{task.title}</strong>{task.note && <p>{task.note}</p>}<div className="task-meta">{plan && <span><i style={{ background: colorHex[plan.color] || colorHex.sage }} />{plan.name}</span>}{task.dueDate && <time className={task.dueDate < today && !task.completed ? "overdue" : ""}>{task.dueDate === today ? "Hôm nay" : new Intl.DateTimeFormat("vi-VN", { day: "numeric", month: "short" }).format(new Date(`${task.dueDate}T12:00:00`))}</time>}{task.priority === "high" && <span className="priority">Quan trọng</span>}</div></div>
-                  <button className="remove" onClick={() => removeTask(task.id)} aria-label={`Xóa ${task.title}`}>×</button>
-                </article>;
-              })}
-              {!loading && !visible.length && <div className="empty-state"><span>✓</span><h3>Mọi thứ đều ổn.</h3><p>{view === "today" ? "Hôm nay chưa có việc nào. Hãy thêm một việc nhỏ bạn muốn hoàn thành." : "Không có công việc trong chế độ xem này."}</p><button onClick={() => setTaskModal(true)}>Thêm việc đầu tiên</button></div>}
-            </div>
-          </section>
+          {section === "habits" && <>
+            <section className="page-heading"><div><p className="eyebrow">HỆ THỐNG ĐẦU VÀO</p><h1>Bảng theo dõi thói quen</h1><p>Check-in mỗi ngày, xem nhịp theo tuần và tìm ra thói quen tạo nhiều tiến bộ nhất.</p></div><button className="primary" onClick={() => setModal("habit")}>+ Thói quen mới</button></section>
+            <section className="tracker panel"><div className="tracker-toolbar"><div className="month-switch"><button onClick={() => shiftMonth(-1)}>‹</button><strong>{new Intl.DateTimeFormat("vi-VN", { month: "long", year: "numeric" }).format(new Date(year, monthNumber - 1, 1))}</strong><button onClick={() => shiftMonth(1)}>›</button></div><div className="tracker-summary"><span><b>{monthLogs.length}</b> check-in</span><span><b>{habitRate}%</b> mục tiêu</span></div></div><div className="tracker-scroll"><div className="habit-grid" style={{ "--days": numberOfDays } as React.CSSProperties}><div className="habit-label header-cell">THÓI QUEN HÀNG NGÀY</div>{days.map((day) => <div className={`day-head week-${Math.min(5, Math.ceil(day / 7))}`} key={day}><span>{new Intl.DateTimeFormat("vi-VN", { weekday: "short" }).format(new Date(year, monthNumber - 1, day)).slice(0, 2)}</span><b>{day}</b></div>)}<div className="progress-head">TIẾN ĐỘ</div>{scopedHabits.map((habit) => <div className="habit-row" key={habit.id} style={{ display: "contents" }}><div className="habit-label"><i style={{ background: palette[habit.color] || palette.sage }} /><span><strong>{habit.name}</strong><small>Mục tiêu {habit.targetPerWeek} ngày/tuần</small></span><button onClick={() => remove("habit", habit.id)} aria-label={`Xóa ${habit.name}`}>×</button></div>{days.map((day) => { const key = `${habit.id}:${dateAt(day)}`; const future = dateAt(day) > today; return <button className={`habit-cell week-${Math.min(5, Math.ceil(day / 7))} ${logKeys.has(key) ? "checked" : ""}`} style={{ "--habit": palette[habit.color] || palette.sage } as React.CSSProperties} disabled={future} onClick={() => toggleHabit(habit.id, dateAt(day))} key={day} aria-label={`${habit.name}, ngày ${day}`}>{logKeys.has(key) ? "✓" : ""}</button>})}<div className="habit-progress"><span><i style={{ width: `${rateFor(habit)}%`, background: palette[habit.color] || palette.sage }} /></span><b>{checksFor(habit)}/{expectedFor(habit)}</b><em>{rateFor(habit)}%</em></div></div>)}</div></div></section>
+            <section className="habit-insights"><article className="panel"><p className="eyebrow">THEO TUẦN</p><h2>Tỷ lệ hoàn thành</h2><div className="week-cards">{weekly.map((item) => <div key={item.label}><span>{item.label}</span><strong>{item.rate}%</strong><div><i style={{ width: `${item.rate}%` }} /></div><small>{item.active} check-in</small></div>)}</div></article><article className="panel coaching"><p className="eyebrow">GỢI Ý REVIEW</p><h2>Đừng chỉ nhìn vào chuỗi.</h2><p>Mỗi cuối tuần, hãy hỏi: thói quen nào dễ giữ nhất, điều gì làm mình bỏ lỡ, và cần giảm mục tiêu hay đổi môi trường?</p><div><b>{topHabits[0]?.name || "Chưa có dữ liệu"}</b><span>Thói quen ổn định nhất</span></div></article></section>
+          </>}
 
-          <section className="plan-grid"><div className="section-title"><div><p className="eyebrow">BỨC TRANH LỚN</p><h2>Các mảng của tôi</h2></div><button className="text-button" onClick={() => setPlanModal(true)}>+ Kế hoạch mới</button></div><div className="cards">{plans.map((plan) => {
-            const own = tasks.filter((task) => task.planId === plan.id); const ownDone = own.filter((task) => task.completed).length; const percent = own.length ? Math.round(ownDone / own.length * 100) : 0;
-            return <button className="plan-card" key={plan.id} onClick={() => setView(`plan:${plan.id}`)}><span className="plan-icon" style={{ color: colorHex[plan.color], background: `${colorHex[plan.color]}18` }}>{plan.name.slice(0, 1).toUpperCase()}</span><div><strong>{plan.name}</strong><small>{own.length - ownDone} việc đang mở</small></div><div className="mini-progress"><i style={{ width: `${percent}%`, background: colorHex[plan.color] }} /></div><em>{percent}%</em></button>;
-          })}</div></section>
-        </div>
-      </section>
+          {section === "goals" && <>
+            <section className="page-heading"><div><p className="eyebrow">HỆ THỐNG KẾT QUẢ</p><h1>Mục tiêu có điểm đến</h1><p>Giữ ít mục tiêu, đo tiến độ thật và nối chúng với những việc bạn làm hằng tuần.</p></div><button className="primary" onClick={() => setModal("goal")}>+ Mục tiêu mới</button></section>
+            <section className="goal-method"><div><span>01</span><b>Chọn kết quả</b><p>Mô tả điều bạn muốn đạt được.</p></div><i /><div><span>02</span><b>Thiết kế hệ thống</b><p>Gắn thói quen và hành động lặp lại.</p></div><i /><div><span>03</span><b>Review mỗi tuần</b><p>Đo, học và điều chỉnh nhịp độ.</p></div></section>
+            <section className="goal-board">{scopedGoals.map((goal) => { const plan = plans.find((item) => item.id === goal.planId); return <article className={`goal-card ${goal.status === "done" ? "done" : ""}`} key={goal.id}><div className="goal-card-head"><span style={{ color: plan ? palette[plan.color] : palette.sage, background: `${plan ? palette[plan.color] : palette.sage}18` }}>{plan?.name || "Chung"}</span><button onClick={() => remove("goal", goal.id)}>×</button></div><h2>{goal.title}</h2><time>Đích đến · {niceDate(goal.targetDate)}</time><div className="goal-progress"><div><i style={{ width: `${goal.progress}%` }} /></div><strong>{goal.progress}%</strong></div><div className="goal-actions"><button onClick={() => moveGoal(goal, -10)} disabled={goal.progress === 0}>−10</button><button onClick={() => moveGoal(goal, 10)} disabled={goal.progress === 100}>+10 tiến độ</button></div></article>})}{!scopedGoals.length && <div className="large-empty"><span>◎</span><h2>Bắt đầu với một kết quả rõ ràng.</h2><p>Một mục tiêu tốt có điểm đến, thời hạn và cách đo tiến độ.</p><button onClick={() => setModal("goal")}>Tạo mục tiêu</button></div>}</section>
+          </>}
 
-      {taskModal && <div className="modal-backdrop" onMouseDown={() => setTaskModal(false)}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="task-title" onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><p className="eyebrow">THÊM VÀO KẾ HOẠCH</p><h2 id="task-title">Việc mới</h2></div><button onClick={() => setTaskModal(false)} aria-label="Đóng">×</button></div><form onSubmit={addTask}><label>Việc bạn muốn làm<input name="title" autoFocus required placeholder="Ví dụ: Đọc 20 trang sách" /></label><label>Ghi chú <span>(không bắt buộc)</span><textarea name="note" placeholder="Thêm một chút bối cảnh..." /></label><div className="form-row"><label>Thuộc kế hoạch<select name="planId" defaultValue={selectedPlan?.id || plans[0]?.id || ""}>{plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</select></label><label>Hạn hoàn thành<input name="dueDate" type="date" defaultValue={today} /></label></div><label>Mức ưu tiên<select name="priority" defaultValue="normal"><option value="low">Nhẹ nhàng</option><option value="normal">Bình thường</option><option value="high">Quan trọng</option></select></label><div className="form-actions"><button type="button" onClick={() => setTaskModal(false)}>Hủy</button><button className="submit" disabled={saving}>{saving ? "Đang lưu..." : "Thêm vào kế hoạch"}</button></div></form></div></div>}
+          {section === "week" && <>
+            <section className="page-heading"><div><p className="eyebrow">HỆ THỐNG HÀNH ĐỘNG</p><h1>Kế hoạch 7 ngày</h1><p>Biến mục tiêu thành những bước cụ thể, phân bổ vừa sức và chừa chỗ cho cuộc sống.</p></div><button className="primary" onClick={() => setModal("task")}>+ Lên việc</button></section>
+            <section className="week-overview"><article><span>VIỆC TRONG TUẦN</span><strong>{weekTasks.length}</strong></article><article><span>ĐÃ HOÀN THÀNH</span><strong>{weekTasks.filter((task) => task.completed).length}</strong></article><article><span>CÒN LẠI</span><strong>{weekTasks.filter((task) => !task.completed).length}</strong></article><article><span>TRỌNG TÂM</span><strong>{weekTasks.filter((task) => task.priority === "high").length}</strong></article></section>
+            <section className="week-board">{weekDates.map((date, index) => { const items = scopedTasks.filter((task) => task.dueDate === date); return <article className={`day-column ${date === today ? "today" : ""}`} key={date}><header><span>{index === 0 ? "HÔM NAY" : new Intl.DateTimeFormat("vi-VN", { weekday: "short" }).format(new Date(`${date}T12:00:00`)).toUpperCase()}</span><strong>{Number(date.slice(8, 10))}</strong><small>THÁNG {Number(date.slice(5, 7))}</small></header><div>{items.map((task) => <button className={`week-task ${task.completed ? "done" : ""}`} key={task.id} onClick={() => toggleTask(task)}><i>{task.completed ? "✓" : ""}</i><span>{task.title}<small>{plans.find((plan) => plan.id === task.planId)?.name || "Chung"}</small></span></button>)}{!items.length && <p className="free-day">Khoảng thở</p>}</div></article>})}</section>
+            <section className="review-card"><span>REVIEW CUỐI TUẦN</span><h2>Ba câu hỏi giữ kế hoạch sống.</h2><div><p><b>01</b> Điều gì đã tiến triển?</p><p><b>02</b> Điều gì đang bị kẹt?</p><p><b>03</b> Tuần tới bỏ bớt điều gì?</p></div></section>
+          </>}
+        </>}
+      </div>
+    </section>
 
-      {planModal && <div className="modal-backdrop" onMouseDown={() => setPlanModal(false)}><div className="modal small" role="dialog" aria-modal="true" aria-labelledby="plan-title" onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><p className="eyebrow">MỘT MẢNG CUỘC SỐNG</p><h2 id="plan-title">Kế hoạch mới</h2></div><button onClick={() => setPlanModal(false)} aria-label="Đóng">×</button></div><form onSubmit={addPlan}><label>Tên kế hoạch<input name="name" autoFocus required placeholder="Ví dụ: Học tập" /></label><fieldset><legend>Màu nhận diện</legend><div className="color-options">{colors.map((color, index) => <label key={color}><input type="radio" name="color" value={color} defaultChecked={index === 0} /><span style={{ background: colorHex[color] }} /></label>)}</div></fieldset><div className="form-actions"><button type="button" onClick={() => setPlanModal(false)}>Hủy</button><button className="submit" disabled={saving}>{saving ? "Đang tạo..." : "Tạo kế hoạch"}</button></div></form></div></div>}
-    </main>
-  );
+    <nav className="mobile-nav" aria-label="Điều hướng di động">{nav.map((item) => <button key={item.id} className={section === item.id ? "active" : ""} onClick={() => setSection(item.id)}><span>{item.icon}</span>{item.label}</button>)}</nav>
+
+    {modal === "task" && <ModalFrame title="Việc mới" eyebrow="HÀNH ĐỘNG CỤ THỂ" close={() => setModal(null)}><form onSubmit={submitTask}><Field label="Việc bạn sẽ làm"><input name="title" autoFocus required placeholder="Ví dụ: Hoàn thành bản nháp đầu tiên" /></Field><Field label="Ghi chú"><textarea name="note" placeholder="Kết quả mong đợi hoặc bước tiếp theo..." /></Field><div className="form-row"><Field label="Mảng cuộc sống"><PlanSelect plans={plans} selected={planFilter} /></Field><Field label="Ngày thực hiện"><input name="dueDate" type="date" defaultValue={today} /></Field></div><Field label="Mức ưu tiên"><select name="priority" defaultValue="normal"><option value="low">Nhẹ nhàng</option><option value="normal">Bình thường</option><option value="high">Quan trọng</option></select></Field><FormActions saving={saving} close={() => setModal(null)} label="Thêm vào tuần" /></form></ModalFrame>}
+    {modal === "habit" && <ModalFrame title="Thói quen mới" eyebrow="HỆ THỐNG LẶP LẠI" close={() => setModal(null)}><form onSubmit={submitHabit}><Field label="Thói quen bạn muốn xây"><input name="name" autoFocus required placeholder="Ví dụ: Đi bộ 30 phút" /></Field><div className="form-row"><Field label="Thuộc mảng"><PlanSelect plans={plans} selected={planFilter} /></Field><Field label="Tần suất mỗi tuần"><select name="targetPerWeek" defaultValue="5">{[1,2,3,4,5,6,7].map((count) => <option value={count} key={count}>{count} ngày / tuần</option>)}</select></Field></div><ColorPicker /><FormActions saving={saving} close={() => setModal(null)} label="Tạo thói quen" /></form></ModalFrame>}
+    {modal === "goal" && <ModalFrame title="Mục tiêu mới" eyebrow="KẾT QUẢ CÓ THỂ ĐO" close={() => setModal(null)}><form onSubmit={submitGoal}><Field label="Kết quả bạn muốn đạt"><input name="title" autoFocus required placeholder="Ví dụ: Hoàn thành chứng chỉ tiếng Anh B2" /></Field><div className="form-row"><Field label="Thuộc mảng"><PlanSelect plans={plans} selected={planFilter} /></Field><Field label="Đích đến"><input name="targetDate" type="date" /></Field></div><div className="form-hint"><b>Gợi ý:</b> Viết mục tiêu dưới dạng kết quả đã đạt, không phải một danh sách việc.</div><FormActions saving={saving} close={() => setModal(null)} label="Tạo mục tiêu" /></form></ModalFrame>}
+    {modal === "plan" && <ModalFrame title="Mảng cuộc sống mới" eyebrow="MỘT KHÔNG GIAN RIÊNG" close={() => setModal(null)} small><form onSubmit={submitPlan}><Field label="Tên mảng"><input name="name" autoFocus required placeholder="Ví dụ: Học tập" /></Field><ColorPicker /><FormActions saving={saving} close={() => setModal(null)} label="Tạo mảng" /></form></ModalFrame>}
+  </main>;
 }
+
+function TaskList({ tasks, plans, today, onToggle, onRemove, empty }: { tasks: Task[]; plans: Plan[]; today: string; onToggle: (task: Task) => void; onRemove: (id: number) => void; empty: string }) {
+  if (!tasks.length) return <div className="task-empty"><span>✓</span><p>{empty}</p></div>;
+  return <div className="task-list">{tasks.map((task) => { const plan = plans.find((item) => item.id === task.planId); return <div className={`task-item ${task.completed ? "done" : ""}`} key={task.id}><button className="check" onClick={() => onToggle(task)}>{task.completed ? "✓" : ""}</button><div><strong>{task.title}</strong><span>{plan && <i style={{ background: palette[plan.color] || palette.sage }} />}{plan?.name || "Chung"}{task.dueDate && ` · ${task.dueDate === today ? "Hôm nay" : niceDate(task.dueDate, "")}`}</span></div>{task.priority === "high" && <b>QUAN TRỌNG</b>}<button className="delete" onClick={() => onRemove(task.id)}>×</button></div>})}</div>;
+}
+function ModalFrame({ title, eyebrow, close, children, small = false }: { title: string; eyebrow: string; close: () => void; children: React.ReactNode; small?: boolean }) {
+  return <div className="modal-backdrop" onMouseDown={close}><div className={`modal ${small ? "small" : ""}`} role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><p className="eyebrow">{eyebrow}</p><h2>{title}</h2></div><button onClick={close}>×</button></div>{children}</div></div>;
+}
+function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="field"><span>{label}</span>{children}</label>; }
+function PlanSelect({ plans, selected }: { plans: Plan[]; selected: number | null }) { return <select name="planId" defaultValue={selected || plans[0]?.id || ""}>{plans.map((plan) => <option value={plan.id} key={plan.id}>{plan.name}</option>)}</select>; }
+function ColorPicker() { return <fieldset className="color-field"><legend>Màu nhận diện</legend><div>{colorNames.map((color, index) => <label key={color}><input type="radio" name="color" value={color} defaultChecked={index === 0} /><span style={{ background: palette[color] }} /></label>)}</div></fieldset>; }
+function FormActions({ saving, close, label }: { saving: boolean; close: () => void; label: string }) { return <div className="form-actions"><button type="button" onClick={close}>Hủy</button><button className="submit" disabled={saving}>{saving ? "Đang lưu..." : label}</button></div>; }
