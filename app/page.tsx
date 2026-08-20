@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 
 type Plan = { id: number; name: string; color: string; createdAt: string };
 type Task = { id: number; planId: number | null; title: string; note: string; dueDate: string | null; priority: string; completed: boolean; createdAt: string };
@@ -8,6 +9,7 @@ type Goal = { id: number; planId: number | null; title: string; targetDate: stri
 type Habit = { id: number; planId: number | null; name: string; targetPerWeek: number; color: string; active: boolean; createdAt: string };
 type HabitLog = { id: number; habitId: number; logDate: string; createdAt: string };
 type WeeklyReview = { id: number; weekStart: string; wins: string; blockers: string; lessons: string; nextFocus: string; energy: number; createdAt: string; updatedAt: string };
+type AccountUser = { id: number; email: string | null; displayName: string; provider: string };
 type Section = "overview" | "habits" | "goals" | "week" | "review";
 type Modal = "task" | "habit" | "goal" | "plan" | null;
 
@@ -37,6 +39,8 @@ export default function Home() {
   const [modal, setModal] = useState<Modal>(null);
   const [month, setMonth] = useState(monthKey());
   const [loading, setLoading] = useState(true);
+  const [authRequired, setAuthRequired] = useState(false);
+  const [user, setUser] = useState<AccountUser | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -52,12 +56,15 @@ export default function Home() {
     let active = true;
     fetch("/api/data", { cache: "no-store" })
       .then(async (response) => {
-        const data = await response.json() as { plans?: Plan[]; tasks?: Task[]; goals?: Goal[]; habits?: Habit[]; habitLogs?: HabitLog[]; weeklyReviews?: WeeklyReview[]; error?: string };
+        const data = await response.json() as { user?: AccountUser | null; plans?: Plan[]; tasks?: Task[]; goals?: Goal[]; habits?: Habit[]; habitLogs?: HabitLog[]; weeklyReviews?: WeeklyReview[]; error?: string };
+        if (response.status === 401) return { ...data, authRequired: true };
         if (!response.ok) throw new Error(data.error || "Không thể tải dữ liệu.");
         return data;
       })
       .then((data) => {
         if (!active) return;
+        if (data.authRequired) { setAuthRequired(true); return; }
+        setUser(data.user || null);
         setPlans(data.plans || []); setTasks(data.tasks || []); setGoals(data.goals || []); setHabits(data.habits || []); setLogs(data.habitLogs || []); setReviews(data.weeklyReviews || []);
       })
       .catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : "Không thể tải dữ liệu."); })
@@ -152,11 +159,18 @@ export default function Home() {
     if (kind === "goal") setGoals((items) => items.filter((item) => item.id !== id));
   }
   function shiftMonth(offset: number) { const next = new Date(year, monthNumber - 1 + offset, 1); setMonth(monthKey(next)); }
+  async function signOut() {
+    await fetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "logout" }) });
+    window.location.assign("/");
+  }
 
   const nav = [
     { id: "overview", icon: "⌂", label: "Tổng quan" }, { id: "habits", icon: "▦", label: "Thói quen" },
     { id: "goals", icon: "◎", label: "Mục tiêu" }, { id: "week", icon: "≡", label: "Kế hoạch tuần" }, { id: "review", icon: "↻", label: "Review tuần" },
   ] as const;
+
+  if (loading) return <main className="auth-shell"><div className="auth-card auth-loading"><span className="auth-mark">P</span><div className="loading"><span />Đang bảo vệ không gian của bạn...</div></div></main>;
+  if (authRequired) return <AuthScreen />;
 
   return <main className="shell">
     <aside className="sidebar">
@@ -165,14 +179,14 @@ export default function Home() {
       <nav aria-label="Không gian chính"><p>HỆ THỐNG CỦA TÔI</p>{nav.map((item) => <button key={item.id} className={section === item.id ? "active" : ""} onClick={() => setSection(item.id)}><span>{item.icon}</span>{item.label}{item.id === "habits" && <b>{habitRate}%</b>}</button>)}</nav>
       <nav className="areas" aria-label="Mảng cuộc sống"><div className="nav-heading"><p>MẢNG CUỘC SỐNG</p><button onClick={() => setModal("plan")}>+</button></div><button className={!planFilter ? "active" : ""} onClick={() => setPlanFilter(null)}><i className="all-dot" />Tất cả</button>{plans.map((plan) => <button key={plan.id} className={planFilter === plan.id ? "active" : ""} onClick={() => setPlanFilter(plan.id)}><i style={{ background: palette[plan.color] || palette.sage }} />{plan.name}</button>)}</nav>
       <div className="system-note"><span>NHỊP PLANARY</span><p>Mục tiêu → Tuần → Hôm nay → Review</p></div>
-      <div className="profile"><span>MN</span><div><b>Không gian cá nhân</b><small>Đã lưu an toàn</small></div></div>
+      <div className="profile"><span>{(user?.displayName || "B").slice(0, 2).toUpperCase()}</span><div><b>{user?.displayName || "Không gian cá nhân"}</b><small>{user?.provider === "chatgpt" ? "Đăng nhập qua ChatGPT" : user?.email || "Dữ liệu riêng tư"}</small></div>{user?.provider === "chatgpt" ? <a className="sign-out" href="/signout-with-chatgpt?return_to=/">Thoát</a> : <button className="sign-out" onClick={signOut}>Thoát</button>}</div>
     </aside>
 
     <section className="main">
       <header className="topbar"><div className="mobile-brand"><span>P</span><b>planary</b></div><div className="context"><span style={{ background: selectedPlan ? palette[selectedPlan.color] : "#5d756a" }} />{selectedPlan?.name || "Tất cả mảng"}</div><div className="top-actions"><time>{new Intl.DateTimeFormat("vi-VN", { weekday: "long", day: "numeric", month: "long" }).format(new Date())}</time><button onClick={() => section === "review" ? document.getElementById("review-form")?.scrollIntoView({ behavior: "smooth" }) : setModal(section === "habits" ? "habit" : section === "goals" ? "goal" : "task")}>{section === "review" ? "Review ngay" : "+ Thêm mới"}</button></div></header>
       <div className="main-inner">
         {error && <div className="alert" role="alert">{error}<button onClick={() => setError("")}>×</button></div>}
-        {loading ? <div className="loading"><span />Đang ghép hệ thống của bạn...</div> : <>
+        <>
 
           {section === "overview" && <>
             <section className="hero"><div><p className="eyebrow">TỔNG QUAN · {new Intl.DateTimeFormat("vi-VN", { month: "long", year: "numeric" }).format(new Date())}</p><h1>Biến kế hoạch<br />thành <em>nhịp sống.</em></h1><p>Một bức tranh liền mạch từ mục tiêu dài hạn đến việc bạn làm mỗi ngày.</p></div><div className="month-score" style={{ "--score": `${habitRate * 3.6}deg` } as React.CSSProperties}><div><strong>{habitRate}%</strong><span>nhịp tháng</span></div></div></section>
@@ -218,7 +232,7 @@ export default function Home() {
               <aside className="review-side"><section><p className="eyebrow">NGHI THỨC 10 PHÚT</p><h2>Một nhịp review đủ dùng.</h2><ol><li><b>2 phút</b><span>Nhìn số liệu, không phán xét.</span></li><li><b>4 phút</b><span>Ghi lại điều tốt và điểm kẹt.</span></li><li><b>2 phút</b><span>Rút ra một bài học.</span></li><li><b>2 phút</b><span>Chọn một trọng tâm tuần tới.</span></li></ol></section><section className="review-history"><div className="panel-head"><div><p className="eyebrow">LỊCH SỬ</p><h2>Các tuần trước</h2></div></div>{reviews.slice(0, 5).map((review) => <button key={review.id} title={review.nextFocus}><span><b>{niceDate(review.weekStart, "")}</b><small>{review.nextFocus || "Chưa ghi trọng tâm"}</small></span><em>{"●".repeat(review.energy)}{"○".repeat(5-review.energy)}</em></button>)}{!reviews.length && <p className="history-empty">Review đầu tiên sẽ xuất hiện ở đây.</p>}</section></aside>
             </section>
           </>}
-        </>}
+        </>
       </div>
     </section>
 
@@ -229,6 +243,27 @@ export default function Home() {
     {modal === "goal" && <ModalFrame title="Mục tiêu mới" eyebrow="KẾT QUẢ CÓ THỂ ĐO" close={() => setModal(null)}><form onSubmit={submitGoal}><Field label="Kết quả bạn muốn đạt"><input name="title" required placeholder="Ví dụ: Hoàn thành chứng chỉ tiếng Anh B2" /></Field><div className="form-row"><Field label="Thuộc mảng"><PlanSelect plans={plans} selected={planFilter} /></Field><Field label="Đích đến"><input name="targetDate" type="date" /></Field></div><div className="form-hint"><b>Gợi ý:</b> Viết mục tiêu dưới dạng kết quả đã đạt, không phải một danh sách việc.</div><FormActions saving={saving} close={() => setModal(null)} label="Tạo mục tiêu" /></form></ModalFrame>}
     {modal === "plan" && <ModalFrame title="Mảng cuộc sống mới" eyebrow="MỘT KHÔNG GIAN RIÊNG" close={() => setModal(null)} small><form onSubmit={submitPlan}><Field label="Tên mảng"><input name="name" required placeholder="Ví dụ: Học tập" /></Field><ColorPicker /><FormActions saving={saving} close={() => setModal(null)} label="Tạo mảng" /></form></ModalFrame>}
   </main>;
+}
+
+function AuthScreen() {
+  const [mode, setMode] = useState<"login" | "register">("register");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("auth_error") || "");
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const password = String(form.get("password") || "");
+    if (mode === "register" && password !== String(form.get("confirmPassword") || "")) return setError("Hai mật khẩu chưa trùng khớp.");
+    setSaving(true); setError("");
+    try {
+      const response = await fetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: mode, email: form.get("email"), password }) });
+      const data = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(data.error || "Không thể xác thực tài khoản.");
+      window.location.assign("/");
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Không thể xác thực tài khoản."); }
+    finally { setSaving(false); }
+  }
+  return <main className="auth-shell"><section className="auth-card"><div className="auth-brand"><span className="auth-mark">P</span><div><b>planary</b><small>PERSONAL SYSTEM</small></div></div><p className="eyebrow">KHÔNG GIAN CỦA RIÊNG BẠN</p><h1>{mode === "register" ? "Tạo không gian riêng tư." : "Chào mừng bạn trở lại."}</h1><p className="auth-copy">Mỗi kế hoạch, thói quen và review được lưu riêng theo tài khoản của bạn.</p>{error && <p className="auth-error" role="alert">{error}</p>}<form className="auth-form" onSubmit={submit}><label><span>Email</span><input required name="email" type="email" autoComplete="email" placeholder="ban@email.com" /></label><label><span>Mật khẩu</span><input required name="password" type="password" minLength={10} autoComplete={mode === "login" ? "current-password" : "new-password"} placeholder="Tối thiểu 10 ký tự" /></label>{mode === "register" && <label><span>Xác nhận mật khẩu</span><input required name="confirmPassword" type="password" minLength={10} autoComplete="new-password" placeholder="Nhập lại mật khẩu" /></label>}<button className="auth-submit" disabled={saving}>{saving ? "Đang xử lý..." : mode === "register" ? "Tạo tài khoản riêng" : "Đăng nhập"}</button></form><button className="auth-switch" onClick={() => { setMode((value) => value === "login" ? "register" : "login"); setError(""); }}>{mode === "register" ? "Đã có tài khoản? Đăng nhập" : "Chưa có tài khoản? Đăng ký"}</button><div className="auth-divider"><span>hoặc</span></div><a className="auth-provider chatgpt-provider" href="/signin-with-chatgpt?return_to=/"><b>◌</b> Tiếp tục với ChatGPT</a><div className="auth-socials"><Link href="/api/auth/oauth/google">Google <small>Cần cấu hình</small></Link><Link href="/api/auth/oauth/facebook">Facebook <small>Cần cấu hình</small></Link><Link href="/api/auth/oauth/github">GitHub <small>Cần cấu hình</small></Link></div><p className="auth-note">Google, Facebook và GitHub sẽ hoạt động ngay sau khi chủ ứng dụng kết nối App ID và App Secret của từng nền tảng.</p></section></main>;
 }
 
 function TaskList({ tasks, plans, today, onToggle, onRemove, empty }: { tasks: Task[]; plans: Plan[]; today: string; onToggle: (task: Task) => void; onRemove: (id: number) => void; empty: string }) {
