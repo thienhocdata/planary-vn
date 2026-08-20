@@ -127,7 +127,6 @@ body{background:radial-gradient(circle at 88% 5%,#fff1df 0,transparent 22%),radi
 
 /* Dashboard metrics: the product's single, visible moment of delight. */
 .profile-actions{display:flex;align-items:center;gap:6px;margin-left:auto}.profile-actions button{border:0;border-radius:7px;background:#f3f7f4;color:var(--green);padding:6px 7px;font-size:7px;font-weight:800;cursor:pointer}.profile-actions button:first-child{background:var(--green);color:#fff}.profile-actions button:hover{transform:translateY(-1px);filter:brightness(.97)}
-.account-entry{display:flex;align-items:center;gap:9px;width:calc(100% - 8px);margin:3px 4px 13px;padding:11px;border:1px solid #cddfd3;border-radius:12px;background:linear-gradient(135deg,#f8fffa,#e8f4eb);text-align:left;color:var(--green);cursor:pointer}.account-entry>span{display:grid;place-items:center;width:25px;height:25px;border-radius:8px;background:var(--green);color:#fff;font-size:13px;font-weight:800}.account-entry b,.account-entry small{display:block}.account-entry b{font-size:9px}.account-entry small{margin-top:3px;color:#73867a;font-size:7px}.account-entry:hover{border-color:#93bba1;transform:translateY(-1px);box-shadow:0 8px 16px rgba(30,94,69,.09)}
 .auth-back{display:block;margin:13px auto 0;border:0;background:transparent;color:#74877c;font-size:9px;font-weight:700;cursor:pointer}.auth-back:hover{color:var(--green)}
 .metric-strip article{isolation:isolate}.metric-strip article:before{content:"✦";position:absolute;z-index:0;top:17px;right:19px;color:#efb07b;font-size:16px;line-height:1;opacity:.8;pointer-events:none}.metric-strip article:nth-child(2):before{color:#64aa82}.metric-strip article:nth-child(3):before{color:#9880c0}.metric-strip .principle:before{color:#d98c67}
 .metric-number{position:relative}.metric-number:after{content:"";position:absolute;left:0;right:-2px;bottom:-5px;height:3px;border-radius:99px;background:linear-gradient(90deg,#e8a16e,#f7cfaf);transform-origin:left}.metric-strip article:nth-child(2) .metric-number:after{background:linear-gradient(90deg,#4c966f,#b4dfc4)}.metric-strip article:nth-child(3) .metric-number:after{background:linear-gradient(90deg,#8871ae,#d3c7e9)}
@@ -136,7 +135,7 @@ body{background:radial-gradient(circle at 88% 5%,#fff1df 0,transparent 22%),radi
 @keyframes metric-pop{0%{opacity:0;transform:translateY(10px) scale(.82)}62%{transform:translateY(-2px) scale(1.06)}100%{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes metric-underline{from{transform:scaleX(.04);opacity:0}to{transform:scaleX(1);opacity:1}}
 @keyframes principle-breathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
-@media(max-width:720px){.profile-actions button{padding:5px 6px;font-size:7px}.account-entry{display:none}}
+@media(max-width:720px){.profile-actions button{padding:5px 6px;font-size:7px}}
 
 /* Scheduled goals are calculated from their calendar, never nudged manually. */
 .goal-schedule{display:flex;justify-content:space-between;gap:10px;margin-top:13px;padding-top:12px;border-top:1px solid #e6ece7;color:#75837b;font-size:8px;font-weight:700}.goal-schedule span:last-child{color:var(--green)}.goal-card.done .goal-schedule span:last-child{color:#8c6f49}.goal-missing-date{margin:13px 0 0;padding:10px;border-radius:8px;background:#fff4ed;color:#9b654f;font-size:8px;line-height:1.5}

@@ -42,7 +42,6 @@ export default function Home() {
   const [month, setMonth] = useState(monthKey());
   const [loading, setLoading] = useState(true);
   const [authRequired, setAuthRequired] = useState(false);
-  const [authScreen, setAuthScreen] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("login") === "1");
   const [user, setUser] = useState<AccountUser | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -181,8 +180,7 @@ export default function Home() {
   ] as const;
 
   if (loading) return <main className="auth-shell"><div className="auth-card auth-loading"><span className="auth-mark">P</span><div className="loading"><span />Đang bảo vệ không gian của bạn...</div></div></main>;
-  function closeAuthScreen() { window.history.replaceState(null, "", "/"); setAuthScreen(false); }
-  if (authRequired || authScreen) return <AuthScreen onBack={user?.provider === "guest" ? closeAuthScreen : undefined} />;
+  if (authRequired) return <AuthScreen onBack={user?.provider === "guest" ? () => setAuthRequired(false) : undefined} />;
 
   return <main className="shell">
     <aside className="sidebar">
@@ -190,7 +188,6 @@ export default function Home() {
       <button className="quick-add" onClick={() => setModal("task")}><span>+</span> Ghi nhanh một việc</button>
       <nav aria-label="Không gian chính"><p>HỆ THỐNG CỦA TÔI</p>{nav.map((item) => <button key={item.id} className={section === item.id ? "active" : ""} onClick={() => setSection(item.id)}><span>{item.icon}</span>{item.label}{item.id === "habits" && <b>{habitRate}%</b>}</button>)}</nav>
       <nav className="areas" aria-label="Mảng cuộc sống"><div className="nav-heading"><p>MẢNG CUỘC SỐNG</p><button onClick={() => setModal("plan")}>+</button></div><button className={!planFilter ? "active" : ""} onClick={() => setPlanFilter(null)}><i className="all-dot" />Tất cả</button>{plans.map((plan) => <button key={plan.id} className={planFilter === plan.id ? "active" : ""} onClick={() => setPlanFilter(plan.id)}><i style={{ background: palette[plan.color] || palette.sage }} />{plan.name}</button>)}</nav>
-      {user?.provider === "guest" && <button className="account-entry" onClick={() => setAuthScreen(true)}><span>↗</span><div><b>Đăng nhập &amp; đồng bộ</b><small>Lưu không gian trên mọi thiết bị</small></div></button>}
       <div className="system-note"><span>NHỊP PLANARY</span><p>Mục tiêu → Tuần → Hôm nay → Review</p></div>
       <div className="profile"><span>{user?.provider === "guest" ? "K" : (user?.displayName || "B").slice(0, 2).toUpperCase()}</span><div><b>{user?.provider === "guest" ? "Dùng nhanh" : user?.displayName || "Không gian cá nhân"}</b><small>{user?.provider === "guest" ? "Gắn với trình duyệt này" : user?.email || "Dữ liệu riêng tư"}</small></div>{user?.provider === "guest" ? <div className="profile-actions"><button onClick={() => setAuthRequired(true)}>Đăng nhập</button><button onClick={() => setAccountModal(true)}>Lưu</button></div> : <button className="sign-out" onClick={signOut}>Thoát</button>}</div>
     </aside>
