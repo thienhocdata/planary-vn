@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type Plan = { id: number; name: string; color: string; createdAt: string };
 type Task = { id: number; planId: number | null; title: string; note: string; dueDate: string | null; priority: string; completed: boolean; createdAt: string };
@@ -170,7 +170,7 @@ export default function Home() {
   ] as const;
 
   if (loading) return <main className="auth-shell"><div className="auth-card auth-loading"><span className="auth-mark">P</span><div className="loading"><span />Đang bảo vệ không gian của bạn...</div></div></main>;
-  if (authRequired) return <AuthScreen />;
+  if (authRequired) return <AuthScreen onBack={user?.provider === "guest" ? () => setAuthRequired(false) : undefined} />;
 
   return <main className="shell">
     <aside className="sidebar">
@@ -179,7 +179,7 @@ export default function Home() {
       <nav aria-label="Không gian chính"><p>HỆ THỐNG CỦA TÔI</p>{nav.map((item) => <button key={item.id} className={section === item.id ? "active" : ""} onClick={() => setSection(item.id)}><span>{item.icon}</span>{item.label}{item.id === "habits" && <b>{habitRate}%</b>}</button>)}</nav>
       <nav className="areas" aria-label="Mảng cuộc sống"><div className="nav-heading"><p>MẢNG CUỘC SỐNG</p><button onClick={() => setModal("plan")}>+</button></div><button className={!planFilter ? "active" : ""} onClick={() => setPlanFilter(null)}><i className="all-dot" />Tất cả</button>{plans.map((plan) => <button key={plan.id} className={planFilter === plan.id ? "active" : ""} onClick={() => setPlanFilter(plan.id)}><i style={{ background: palette[plan.color] || palette.sage }} />{plan.name}</button>)}</nav>
       <div className="system-note"><span>NHỊP PLANARY</span><p>Mục tiêu → Tuần → Hôm nay → Review</p></div>
-      <div className="profile"><span>{user?.provider === "guest" ? "K" : (user?.displayName || "B").slice(0, 2).toUpperCase()}</span><div><b>{user?.provider === "guest" ? "Dùng nhanh" : user?.displayName || "Không gian cá nhân"}</b><small>{user?.provider === "guest" ? "Gắn với trình duyệt này" : user?.email || "Dữ liệu riêng tư"}</small></div>{user?.provider === "guest" ? <button className="sign-out" onClick={() => setAccountModal(true)}>Giữ dữ liệu</button> : <button className="sign-out" onClick={signOut}>Thoát</button>}</div>
+      <div className="profile"><span>{user?.provider === "guest" ? "K" : (user?.displayName || "B").slice(0, 2).toUpperCase()}</span><div><b>{user?.provider === "guest" ? "Dùng nhanh" : user?.displayName || "Không gian cá nhân"}</b><small>{user?.provider === "guest" ? "Gắn với trình duyệt này" : user?.email || "Dữ liệu riêng tư"}</small></div>{user?.provider === "guest" ? <div className="profile-actions"><button onClick={() => setAuthRequired(true)}>Đăng nhập</button><button onClick={() => setAccountModal(true)}>Lưu</button></div> : <button className="sign-out" onClick={signOut}>Thoát</button>}</div>
     </aside>
 
     <section className="main">
@@ -190,7 +190,7 @@ export default function Home() {
 
           {section === "overview" && <>
             <section className="hero"><div><p className="eyebrow">TỔNG QUAN · {new Intl.DateTimeFormat("vi-VN", { month: "long", year: "numeric" }).format(new Date())}</p><h1>Biến kế hoạch<br />thành <em>nhịp sống.</em></h1><p>Một bức tranh liền mạch từ mục tiêu dài hạn đến việc bạn làm mỗi ngày.</p></div><div className="month-score" style={{ "--score": `${habitRate * 3.6}deg` } as React.CSSProperties}><div><strong>{habitRate}%</strong><span>nhịp tháng</span></div></div></section>
-            <section className="metric-strip"><article><span>CHECK-IN THÁNG NÀY</span><strong>{monthLogs.length}</strong><small>lần giữ nhịp</small></article><article><span>VIỆC HÔM NAY</span><strong>{todayTasks.length}</strong><small>{todayTasks.filter((item) => item.priority === "high").length} việc quan trọng</small></article><article><span>MỤC TIÊU ĐANG CHẠY</span><strong>{openGoals.length}</strong><small>{goals.filter((goal) => goal.status === "done").length} đã về đích</small></article><article className="principle"><span>NGUYÊN TẮC THÁNG</span><p>Tiến bộ nhỏ, đều đặn<br />quan trọng hơn hoàn hảo.</p></article></section>
+            <section className="metric-strip"><article><span>CHECK-IN THÁNG NÀY</span><MetricNumber value={monthLogs.length} /><small>lần giữ nhịp</small></article><article><span>VIỆC HÔM NAY</span><MetricNumber value={todayTasks.length} /><small>{todayTasks.filter((item) => item.priority === "high").length} việc quan trọng</small></article><article><span>MỤC TIÊU ĐANG CHẠY</span><MetricNumber value={openGoals.length} /><small>{goals.filter((goal) => goal.status === "done").length} đã về đích</small></article><article className="principle"><span>NGUYÊN TẮC THÁNG</span><p>Tiến bộ nhỏ, đều đặn<br />quan trọng hơn hoàn hảo.</p></article></section>
             <section className="analytics-grid">
               <article className="panel trend"><div className="panel-head"><div><p className="eyebrow">BIẾN ĐỘNG HÀNG NGÀY</p><h2>Nhịp thói quen</h2></div><button onClick={() => setSection("habits")}>Mở bảng theo dõi →</button></div><div className="daily-chart">{dailyCounts.map((count, index) => <div className="bar-column" key={index}><i style={{ height: `${Math.max(4, count / maxDaily * 100)}%` }} /><span>{[0, 6, 13, 20, 27, numberOfDays - 1].includes(index) ? index + 1 : ""}</span></div>)}</div><div className="chart-foot"><span><i /> Mỗi cột là số lần check-in trong ngày</span><b>Cao nhất {maxDaily} lần/ngày</b></div></article>
               <article className="panel completion"><p className="eyebrow">CƠ CẤU HOÀN THÀNH</p><div className="big-ring" style={{ "--score": `${habitRate * 3.6}deg` } as React.CSSProperties}><div><strong>{monthLogs.length}</strong><span>/ {totalExpected || 0} mục tiêu</span></div></div><h3>{habitRate >= 80 ? "Nhịp rất tốt" : habitRate >= 50 ? "Đang tạo đà" : "Cứ bắt đầu nhỏ"}</h3><p>{habitRate}% khối lượng thói quen dự kiến đã hoàn thành.</p></article>
@@ -246,7 +246,7 @@ export default function Home() {
   </main>;
 }
 
-function AuthScreen() {
+function AuthScreen({ onBack }: { onBack?: () => void }) {
   const [mode, setMode] = useState<"login" | "register">("register");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("auth_error") || "");
@@ -274,7 +274,20 @@ function AuthScreen() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Không thể mở chế độ dùng nhanh."); }
     finally { setSaving(false); }
   }
-  return <main className="auth-shell"><section className="auth-card"><div className="auth-brand"><span className="auth-mark">P</span><div><b>planary</b><small>PERSONAL SYSTEM</small></div></div><p className="eyebrow">KHÔNG GIAN CỦA RIÊNG BẠN</p><h1>{mode === "register" ? "Tạo không gian riêng tư." : "Chào mừng bạn trở lại."}</h1><p className="auth-copy">Dùng ngay trong vài giây, hoặc tạo tài khoản để giữ dữ liệu trên mọi thiết bị.</p>{error && <p className="auth-error" role="alert">{error}</p>}<button className="guest-submit" disabled={saving} onClick={continueAsGuest}>Dùng nhanh, không cần đăng nhập<small>Dữ liệu gắn với trình duyệt này</small></button><div className="auth-divider"><span>hoặc dùng tài khoản</span></div><form className="auth-form" onSubmit={submit}><label><span>Email</span><input required name="email" type="email" autoComplete="email" placeholder="ban@email.com" /></label><label><span>Mật khẩu</span><input required name="password" type="password" minLength={10} autoComplete={mode === "login" ? "current-password" : "new-password"} placeholder="Tối thiểu 10 ký tự" /></label>{mode === "register" && <label><span>Xác nhận mật khẩu</span><input required name="confirmPassword" type="password" minLength={10} autoComplete="new-password" placeholder="Nhập lại mật khẩu" /></label>}<button className="auth-submit" disabled={saving}>{saving ? "Đang xử lý..." : mode === "register" ? "Tạo tài khoản riêng" : "Đăng nhập"}</button></form><button className="auth-switch" onClick={() => { setMode((value) => value === "login" ? "register" : "login"); setError(""); }}>{mode === "register" ? "Đã có tài khoản? Đăng nhập" : "Chưa có tài khoản? Đăng ký"}</button><div className="auth-socials"><button disabled>Google<small>Sắp kết nối</small></button><button disabled>Facebook<small>Sắp kết nối</small></button><button disabled>GitHub<small>Sắp kết nối</small></button></div><p className="auth-note">Google và Facebook cần App ID/Secret của chủ ứng dụng trước khi có thể bật đăng nhập thật.</p></section></main>;
+  return <main className="auth-shell"><section className="auth-card"><div className="auth-brand"><span className="auth-mark">P</span><div><b>planary</b><small>PERSONAL SYSTEM</small></div></div><p className="eyebrow">KHÔNG GIAN CỦA RIÊNG BẠN</p><h1>{mode === "register" ? "Tạo không gian riêng tư." : "Chào mừng bạn trở lại."}</h1><p className="auth-copy">Dùng ngay trong vài giây, hoặc tạo tài khoản để giữ dữ liệu trên mọi thiết bị.</p>{error && <p className="auth-error" role="alert">{error}</p>}<button className="guest-submit" disabled={saving} onClick={continueAsGuest}>Dùng nhanh, không cần đăng nhập<small>Dữ liệu gắn với trình duyệt này</small></button><div className="auth-divider"><span>hoặc dùng tài khoản</span></div><form className="auth-form" onSubmit={submit}><label><span>Email</span><input required name="email" type="email" autoComplete="email" placeholder="ban@email.com" /></label><label><span>Mật khẩu</span><input required name="password" type="password" minLength={10} autoComplete={mode === "login" ? "current-password" : "new-password"} placeholder="Tối thiểu 10 ký tự" /></label>{mode === "register" && <label><span>Xác nhận mật khẩu</span><input required name="confirmPassword" type="password" minLength={10} autoComplete="new-password" placeholder="Nhập lại mật khẩu" /></label>}<button className="auth-submit" disabled={saving}>{saving ? "Đang xử lý..." : mode === "register" ? "Tạo tài khoản riêng" : "Đăng nhập"}</button></form><button className="auth-switch" onClick={() => { setMode((value) => value === "login" ? "register" : "login"); setError(""); }}>{mode === "register" ? "Đã có tài khoản? Đăng nhập" : "Chưa có tài khoản? Đăng ký"}</button>{onBack && <button className="auth-back" onClick={onBack}>← Quay lại dùng nhanh</button>}<p className="auth-note">Một tài khoản email là đủ để giữ không gian Planary của bạn trên mọi thiết bị.</p></section></main>;
+}
+
+function MetricNumber({ value }: { value: number }) {
+  const [display, setDisplay] = useState(0);
+  const current = useRef(0);
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) { current.current = value; const frame = requestAnimationFrame(() => setDisplay(value)); return () => cancelAnimationFrame(frame); }
+    const from = current.current; const started = performance.now(); const duration = 720;
+    let frame = 0;
+    const tick = (now: number) => { const progress = Math.min(1, (now - started) / duration); const eased = 1 - Math.pow(1 - progress, 3); const next = Math.round(from + (value - from) * eased); current.current = next; setDisplay(next); if (progress < 1) frame = requestAnimationFrame(tick); };
+    frame = requestAnimationFrame(tick); return () => cancelAnimationFrame(frame);
+  }, [value]);
+  return <strong className="metric-number">{display}</strong>;
 }
 
 function AccountUpgrade({ close }: { close: () => void }) {
