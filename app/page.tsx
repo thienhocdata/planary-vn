@@ -184,7 +184,7 @@ export default function Home() {
 
     <section className="main">
       <header className="topbar"><div className="mobile-brand"><span>P</span><b>planary</b></div><div className="context"><span style={{ background: selectedPlan ? palette[selectedPlan.color] : "#5d756a" }} />{selectedPlan?.name || "Tất cả mảng"}</div><div className="top-actions"><time>{new Intl.DateTimeFormat("vi-VN", { weekday: "long", day: "numeric", month: "long" }).format(new Date())}</time><button onClick={() => section === "review" ? document.getElementById("review-form")?.scrollIntoView({ behavior: "smooth" }) : setModal(section === "habits" ? "habit" : section === "goals" ? "goal" : "task")}>{section === "review" ? "Review ngay" : "+ Thêm mới"}</button></div></header>
-      <div className="main-inner">
+      <div className={`main-inner motion-stage motion-${section}`}>
         {error && <div className="alert" role="alert">{error}<button onClick={() => setError("")}>×</button></div>}
         <>
 

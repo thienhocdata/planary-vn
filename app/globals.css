@@ -100,3 +100,27 @@ body{background:radial-gradient(circle at 88% 5%,#fff1df 0,transparent 22%),radi
 @keyframes check-pop{0%{transform:scale(.55);filter:brightness(1.25)}65%{transform:scale(1.2)}100%{transform:scale(1);filter:brightness(1)}}
 @keyframes progress-fill{from{transform:scaleX(.03)}to{transform:scaleX(1)}}
 @keyframes card-arrive{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:translateY(0)}}
+
+/* One shared motion language: calm arrival, clear feedback, no random movement. */
+:root{--motion-ease:cubic-bezier(.22,.8,.28,1);--motion-duration:.48s;--motion-distance:12px}
+@media(prefers-reduced-motion:no-preference){
+  .motion-stage>section{animation:section-arrive var(--motion-duration) var(--motion-ease) backwards}
+  .motion-stage>section:nth-of-type(1){animation-delay:.02s}.motion-stage>section:nth-of-type(2){animation-delay:.08s}.motion-stage>section:nth-of-type(3){animation-delay:.14s}.motion-stage>section:nth-of-type(4){animation-delay:.2s}
+  .motion-stage>.metric-strip,.motion-stage>.analytics-grid,.motion-stage>.two-columns,.motion-stage>.tracker,.motion-stage>.habit-insights,.motion-stage>.goal-board,.motion-stage>.week-overview,.motion-stage>.week-board,.motion-stage>.review-snapshot,.motion-stage>.review-layout{animation:none}
+  .metric-strip article,.analytics-grid .panel,.two-columns .panel,.goal-card,.day-column,.week-cards>div,.week-overview article,.habit-insights>.panel,.review-snapshot article,.review-form,.review-side>section,.goal-method,.review-card{animation:card-arrive var(--motion-duration) var(--motion-ease) backwards}
+  .metric-strip article:nth-child(2),.analytics-grid .panel:nth-child(2),.two-columns .panel:nth-child(2),.goal-card:nth-child(2),.day-column:nth-child(2),.week-overview article:nth-child(2),.week-cards>div:nth-child(2),.review-snapshot article:nth-child(2),.review-side>section:nth-child(2){animation-delay:.06s}
+  .metric-strip article:nth-child(3),.analytics-grid .panel:nth-child(3),.goal-card:nth-child(3),.day-column:nth-child(3),.week-overview article:nth-child(3),.week-cards>div:nth-child(3),.review-snapshot article:nth-child(3){animation-delay:.12s}
+  .metric-strip article:nth-child(4),.analytics-grid .panel:nth-child(4),.goal-card:nth-child(4),.day-column:nth-child(4),.week-overview article:nth-child(4),.week-cards>div:nth-child(4),.review-snapshot article:nth-child(4){animation-delay:.18s}
+  .metric-strip article:nth-child(5),.goal-card:nth-child(5),.day-column:nth-child(5),.week-cards>div:nth-child(5){animation-delay:.24s}
+  .metric-strip article:nth-child(6),.goal-card:nth-child(6),.day-column:nth-child(6){animation-delay:.3s}
+  .metric-strip article:nth-child(7),.goal-card:nth-child(7),.day-column:nth-child(7){animation-delay:.36s}
+  .review-snapshot article{animation-name:card-arrive}
+  .goal-card:hover,.panel:hover{transition:transform .2s ease,box-shadow .2s ease}
+  .task-item.done,.week-task.done{animation:completion-feedback .42s var(--motion-ease)}
+  .task-item.done .check,.week-task.done i,.habit-cell.checked{animation:check-pop .32s var(--motion-ease)}
+  .daily-chart .bar-column i,.weekly-bars .week-bar i{animation-timing-function:var(--motion-ease)}
+}
+@keyframes section-arrive{from{opacity:0;transform:translateY(var(--motion-distance))}to{opacity:1;transform:translateY(0)}}
+@keyframes completion-feedback{0%{background:#fff4dc;transform:translateX(-3px)}62%{background:#e7f5eb;transform:translateX(1px)}100%{background:transparent;transform:translateX(0)}}
+@media(prefers-reduced-motion:reduce){.motion-stage>section,.metric-strip article,.analytics-grid .panel,.two-columns .panel,.goal-card,.day-column,.week-overview article,.week-cards>div,.habit-insights>.panel,.review-snapshot article,.review-form,.review-side>section,.goal-method,.review-card{animation:none!important;transition:none!important}}
+@media(max-width:720px){:root{--motion-distance:8px}.motion-stage>section:nth-of-type(n){animation-delay:0s}.metric-strip article,.analytics-grid .panel,.two-columns .panel,.goal-card,.day-column,.week-overview article,.week-cards>div,.habit-insights>.panel,.review-snapshot article,.review-form,.review-side>section,.goal-method,.review-card{animation-delay:0s!important}}
