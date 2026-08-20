@@ -55,3 +55,26 @@
 
 .guest-submit{display:block;width:100%;padding:13px;border:1px solid #b9cec0;border-radius:11px;background:#edf5ef;color:var(--green);font-size:11px;font-weight:800;cursor:pointer}.guest-submit small{display:block;margin-top:4px;color:#73877a;font-size:8px;font-weight:500}.guest-submit:disabled{opacity:.6;cursor:wait}.auth-socials{margin-top:20px}.auth-socials button{padding:9px 5px;border:1px solid #e0e7e1;border-radius:9px;background:#f6f8f6;color:#96a19a;font-size:9px;font-weight:700;text-align:center;cursor:not-allowed}.account-upgrade-copy{margin:0 0 18px;color:var(--muted);font-size:10px;line-height:1.6}
 @media(max-width:500px){.auth-socials button{font-size:8px}}
+
+/* Fresh bloom — a brighter visual layer without changing the workflow. */
+body{background:radial-gradient(circle at 88% 5%,#fff1df 0,transparent 22%),radial-gradient(circle at 36% 55%,#e8f5ee 0,transparent 28%),var(--paper)}
+.sidebar{background:linear-gradient(180deg,#edf4ee 0%,#e5eee8 58%,#edf0ec 100%)}
+.brand>span,.mobile-brand>span,.auth-mark{background:linear-gradient(145deg,#2f8060,#18513c);box-shadow:0 8px 16px rgba(25,81,60,.18)}
+.quick-add,.top-actions button,.primary,.auth-submit,.review-submit button{background:linear-gradient(135deg,#1d684d,#2d8765);box-shadow:0 10px 22px rgba(30,105,77,.19)}
+.quick-add:hover,.top-actions button:hover,.primary:hover,.auth-submit:hover,.review-submit button:hover{background:linear-gradient(135deg,#17563f,#277458);transform:translateY(-1px)}
+.hero{background:linear-gradient(122deg,#154f3b 0%,#207157 54%,#377c64 100%)}
+.hero:before{right:92px;border-color:rgba(255,224,193,.36);box-shadow:0 0 0 24px rgba(255,224,193,.045),0 0 0 51px rgba(255,255,255,.035)}
+.hero:after{right:-52px;border-color:rgba(198,240,218,.23);background:radial-gradient(circle at 38% 38%,rgba(255,222,193,.18),transparent 54%)}
+.hero h1 em{color:#ffd2bb;text-shadow:0 2px 18px rgba(255,204,176,.16)}
+.month-score{background:conic-gradient(#ffd0b7 var(--score),rgba(255,255,255,.15) 0);box-shadow:0 0 0 8px rgba(255,255,255,.035)}
+.metric-strip article{position:relative;overflow:hidden;border-top-width:3px!important}.metric-strip article:nth-child(1){background:#fffdfa;border-top-color:#eca76f!important}.metric-strip article:nth-child(2){background:#f8fcf9;border-top-color:#79b793!important}.metric-strip article:nth-child(3){background:#fbf8fe;border-top-color:#a997ce!important}.metric-strip .principle{background:linear-gradient(135deg,#fff2e9,#f7e7d7);border-top-color:#e69b76!important}.metric-strip article:after{content:"";position:absolute;right:-24px;bottom:-31px;width:82px;height:82px;border-radius:50%;background:rgba(255,255,255,.42)}
+.panel{transition:transform .2s ease,box-shadow .2s ease}.panel:hover{transform:translateY(-2px);box-shadow:0 17px 34px rgba(28,57,45,.09)}
+.trend{background:linear-gradient(145deg,#fff 0%,#f8fcf9 100%)}.completion{background:linear-gradient(150deg,#fffdf8 0%,#fff7eb 100%)}.week-panel{background:linear-gradient(150deg,#fbfaff 0%,#fff 100%)}.top-panel{background:linear-gradient(150deg,#f8fcfa 0%,#fff 100%)}
+.bar-column i{background:linear-gradient(#4f9f7c,#a9d8bd)}.chart-foot i{background:#e4a271}.week-bar i{background:linear-gradient(#8fbea7,#34785c)}
+.task-item{border-radius:9px;padding-inline:7px;transition:background .16s ease,transform .16s ease}.task-item:hover{background:#f5faf6;transform:translateX(2px)}
+.goal-card:nth-child(3n+1){background:linear-gradient(155deg,#fffdf9,#fff)}.goal-card:nth-child(3n+2){background:linear-gradient(155deg,#f8fcf9,#fff)}.goal-card:nth-child(3n){background:linear-gradient(155deg,#fbf9fe,#fff)}.goal-card{border-top:3px solid #8abda0}.goal-card:nth-child(3n+2){border-top-color:#e2aa73}.goal-card:nth-child(3n){border-top-color:#ad9bd0}.goal-card:hover{transform:translateY(-3px);box-shadow:0 19px 38px rgba(28,57,45,.1)}
+.week-cards>div:nth-child(5n+1){background:#fff5ec}.week-cards>div:nth-child(5n+2){background:#eef8f1}.week-cards>div:nth-child(5n+3){background:#f2effb}.week-cards>div:nth-child(5n+4){background:#eef6fb}.week-cards>div:nth-child(5n){background:#fbf7e9}.week-cards i{background:linear-gradient(90deg,#e19f71,#2f8060)}
+.week-overview article:nth-child(1),.review-snapshot article:nth-child(1){background:#fff7ee}.week-overview article:nth-child(2),.review-snapshot article:nth-child(2){background:#f0f9f3}.week-overview article:nth-child(3),.review-snapshot article:nth-child(3){background:#f4f1fb}.week-overview article:nth-child(4){background:#eef6fb}.review-snapshot .review-streak{background:linear-gradient(135deg,#1a5a42,#2b8060)}
+.day-column:nth-child(7n+1) header{background:#fff8f2}.day-column:nth-child(7n+2) header{background:#f1faf4}.day-column:nth-child(7n+3) header{background:#f5f2fc}.day-column:nth-child(7n+4) header{background:#eff7fb}.day-column:nth-child(7n+5) header{background:#fbf7ea}.day-column:nth-child(7n+6) header{background:#fff1f1}.day-column:nth-child(7n) header{background:#f3f7f4}
+.review-side>section:first-child{background:linear-gradient(145deg,#e7f3e9,#f8fcf8)}.review-form-head>div>span{background:linear-gradient(145deg,#dff1e5,#f5dfcf)}
+@media(max-width:720px){.panel:hover,.goal-card:hover{transform:none}.metric-strip article:after{width:62px;height:62px}}
