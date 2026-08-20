@@ -1,7 +1,6 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 
 type Plan = { id: number; name: string; color: string; createdAt: string };
 type Task = { id: number; planId: number | null; title: string; note: string; dueDate: string | null; priority: string; completed: boolean; createdAt: string };
@@ -37,6 +36,7 @@ export default function Home() {
   const [section, setSection] = useState<Section>("overview");
   const [planFilter, setPlanFilter] = useState<number | null>(null);
   const [modal, setModal] = useState<Modal>(null);
+  const [accountModal, setAccountModal] = useState(false);
   const [month, setMonth] = useState(monthKey());
   const [loading, setLoading] = useState(true);
   const [authRequired, setAuthRequired] = useState(false);
@@ -179,7 +179,7 @@ export default function Home() {
       <nav aria-label="Không gian chính"><p>HỆ THỐNG CỦA TÔI</p>{nav.map((item) => <button key={item.id} className={section === item.id ? "active" : ""} onClick={() => setSection(item.id)}><span>{item.icon}</span>{item.label}{item.id === "habits" && <b>{habitRate}%</b>}</button>)}</nav>
       <nav className="areas" aria-label="Mảng cuộc sống"><div className="nav-heading"><p>MẢNG CUỘC SỐNG</p><button onClick={() => setModal("plan")}>+</button></div><button className={!planFilter ? "active" : ""} onClick={() => setPlanFilter(null)}><i className="all-dot" />Tất cả</button>{plans.map((plan) => <button key={plan.id} className={planFilter === plan.id ? "active" : ""} onClick={() => setPlanFilter(plan.id)}><i style={{ background: palette[plan.color] || palette.sage }} />{plan.name}</button>)}</nav>
       <div className="system-note"><span>NHỊP PLANARY</span><p>Mục tiêu → Tuần → Hôm nay → Review</p></div>
-      <div className="profile"><span>{(user?.displayName || "B").slice(0, 2).toUpperCase()}</span><div><b>{user?.displayName || "Không gian cá nhân"}</b><small>{user?.provider === "chatgpt" ? "Đăng nhập qua ChatGPT" : user?.email || "Dữ liệu riêng tư"}</small></div>{user?.provider === "chatgpt" ? <a className="sign-out" href="/signout-with-chatgpt?return_to=/">Thoát</a> : <button className="sign-out" onClick={signOut}>Thoát</button>}</div>
+      <div className="profile"><span>{user?.provider === "guest" ? "K" : (user?.displayName || "B").slice(0, 2).toUpperCase()}</span><div><b>{user?.provider === "guest" ? "Dùng nhanh" : user?.displayName || "Không gian cá nhân"}</b><small>{user?.provider === "guest" ? "Gắn với trình duyệt này" : user?.email || "Dữ liệu riêng tư"}</small></div>{user?.provider === "guest" ? <button className="sign-out" onClick={() => setAccountModal(true)}>Giữ dữ liệu</button> : <button className="sign-out" onClick={signOut}>Thoát</button>}</div>
     </aside>
 
     <section className="main">
@@ -242,6 +242,7 @@ export default function Home() {
     {modal === "habit" && <ModalFrame title="Thói quen mới" eyebrow="HỆ THỐNG LẶP LẠI" close={() => setModal(null)}><form onSubmit={submitHabit}><Field label="Thói quen bạn muốn xây"><input name="name" required placeholder="Ví dụ: Đi bộ 30 phút" /></Field><div className="form-row"><Field label="Thuộc mảng"><PlanSelect plans={plans} selected={planFilter} /></Field><Field label="Tần suất mỗi tuần"><select name="targetPerWeek" defaultValue="5">{[1,2,3,4,5,6,7].map((count) => <option value={count} key={count}>{count} ngày / tuần</option>)}</select></Field></div><ColorPicker /><FormActions saving={saving} close={() => setModal(null)} label="Tạo thói quen" /></form></ModalFrame>}
     {modal === "goal" && <ModalFrame title="Mục tiêu mới" eyebrow="KẾT QUẢ CÓ THỂ ĐO" close={() => setModal(null)}><form onSubmit={submitGoal}><Field label="Kết quả bạn muốn đạt"><input name="title" required placeholder="Ví dụ: Hoàn thành chứng chỉ tiếng Anh B2" /></Field><div className="form-row"><Field label="Thuộc mảng"><PlanSelect plans={plans} selected={planFilter} /></Field><Field label="Đích đến"><input name="targetDate" type="date" /></Field></div><div className="form-hint"><b>Gợi ý:</b> Viết mục tiêu dưới dạng kết quả đã đạt, không phải một danh sách việc.</div><FormActions saving={saving} close={() => setModal(null)} label="Tạo mục tiêu" /></form></ModalFrame>}
     {modal === "plan" && <ModalFrame title="Mảng cuộc sống mới" eyebrow="MỘT KHÔNG GIAN RIÊNG" close={() => setModal(null)} small><form onSubmit={submitPlan}><Field label="Tên mảng"><input name="name" required placeholder="Ví dụ: Học tập" /></Field><ColorPicker /><FormActions saving={saving} close={() => setModal(null)} label="Tạo mảng" /></form></ModalFrame>}
+    {accountModal && <AccountUpgrade close={() => setAccountModal(false)} />}
   </main>;
 }
 
@@ -263,7 +264,36 @@ function AuthScreen() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Không thể xác thực tài khoản."); }
     finally { setSaving(false); }
   }
-  return <main className="auth-shell"><section className="auth-card"><div className="auth-brand"><span className="auth-mark">P</span><div><b>planary</b><small>PERSONAL SYSTEM</small></div></div><p className="eyebrow">KHÔNG GIAN CỦA RIÊNG BẠN</p><h1>{mode === "register" ? "Tạo không gian riêng tư." : "Chào mừng bạn trở lại."}</h1><p className="auth-copy">Mỗi kế hoạch, thói quen và review được lưu riêng theo tài khoản của bạn.</p>{error && <p className="auth-error" role="alert">{error}</p>}<form className="auth-form" onSubmit={submit}><label><span>Email</span><input required name="email" type="email" autoComplete="email" placeholder="ban@email.com" /></label><label><span>Mật khẩu</span><input required name="password" type="password" minLength={10} autoComplete={mode === "login" ? "current-password" : "new-password"} placeholder="Tối thiểu 10 ký tự" /></label>{mode === "register" && <label><span>Xác nhận mật khẩu</span><input required name="confirmPassword" type="password" minLength={10} autoComplete="new-password" placeholder="Nhập lại mật khẩu" /></label>}<button className="auth-submit" disabled={saving}>{saving ? "Đang xử lý..." : mode === "register" ? "Tạo tài khoản riêng" : "Đăng nhập"}</button></form><button className="auth-switch" onClick={() => { setMode((value) => value === "login" ? "register" : "login"); setError(""); }}>{mode === "register" ? "Đã có tài khoản? Đăng nhập" : "Chưa có tài khoản? Đăng ký"}</button><div className="auth-divider"><span>hoặc</span></div><a className="auth-provider chatgpt-provider" href="/signin-with-chatgpt?return_to=/"><b>◌</b> Tiếp tục với ChatGPT</a><div className="auth-socials"><Link href="/api/auth/oauth/google">Google <small>Cần cấu hình</small></Link><Link href="/api/auth/oauth/facebook">Facebook <small>Cần cấu hình</small></Link><Link href="/api/auth/oauth/github">GitHub <small>Cần cấu hình</small></Link></div><p className="auth-note">Google, Facebook và GitHub sẽ hoạt động ngay sau khi chủ ứng dụng kết nối App ID và App Secret của từng nền tảng.</p></section></main>;
+  async function continueAsGuest() {
+    setSaving(true); setError("");
+    try {
+      const response = await fetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "guest" }) });
+      const data = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(data.error || "Không thể mở chế độ dùng nhanh.");
+      window.location.assign("/");
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Không thể mở chế độ dùng nhanh."); }
+    finally { setSaving(false); }
+  }
+  return <main className="auth-shell"><section className="auth-card"><div className="auth-brand"><span className="auth-mark">P</span><div><b>planary</b><small>PERSONAL SYSTEM</small></div></div><p className="eyebrow">KHÔNG GIAN CỦA RIÊNG BẠN</p><h1>{mode === "register" ? "Tạo không gian riêng tư." : "Chào mừng bạn trở lại."}</h1><p className="auth-copy">Dùng ngay trong vài giây, hoặc tạo tài khoản để giữ dữ liệu trên mọi thiết bị.</p>{error && <p className="auth-error" role="alert">{error}</p>}<button className="guest-submit" disabled={saving} onClick={continueAsGuest}>Dùng nhanh, không cần đăng nhập<small>Dữ liệu gắn với trình duyệt này</small></button><div className="auth-divider"><span>hoặc dùng tài khoản</span></div><form className="auth-form" onSubmit={submit}><label><span>Email</span><input required name="email" type="email" autoComplete="email" placeholder="ban@email.com" /></label><label><span>Mật khẩu</span><input required name="password" type="password" minLength={10} autoComplete={mode === "login" ? "current-password" : "new-password"} placeholder="Tối thiểu 10 ký tự" /></label>{mode === "register" && <label><span>Xác nhận mật khẩu</span><input required name="confirmPassword" type="password" minLength={10} autoComplete="new-password" placeholder="Nhập lại mật khẩu" /></label>}<button className="auth-submit" disabled={saving}>{saving ? "Đang xử lý..." : mode === "register" ? "Tạo tài khoản riêng" : "Đăng nhập"}</button></form><button className="auth-switch" onClick={() => { setMode((value) => value === "login" ? "register" : "login"); setError(""); }}>{mode === "register" ? "Đã có tài khoản? Đăng nhập" : "Chưa có tài khoản? Đăng ký"}</button><div className="auth-socials"><button disabled>Google<small>Sắp kết nối</small></button><button disabled>Facebook<small>Sắp kết nối</small></button><button disabled>GitHub<small>Sắp kết nối</small></button></div><p className="auth-note">Google và Facebook cần App ID/Secret của chủ ứng dụng trước khi có thể bật đăng nhập thật.</p></section></main>;
+}
+
+function AccountUpgrade({ close }: { close: () => void }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget); const password = String(form.get("password") || "");
+    if (password !== String(form.get("confirmPassword") || "")) return setError("Hai mật khẩu chưa trùng khớp.");
+    setSaving(true); setError("");
+    try {
+      const response = await fetch("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "register", email: form.get("email"), password }) });
+      const data = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(data.error || "Không thể tạo tài khoản.");
+      window.location.assign("/");
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Không thể tạo tài khoản."); }
+    finally { setSaving(false); }
+  }
+  return <ModalFrame title="Giữ dữ liệu của bạn" eyebrow="NÂNG CẤP TỪ DÙNG NHANH" close={close} small><p className="account-upgrade-copy">Tạo tài khoản để đồng bộ không gian hiện tại trên các thiết bị. Dữ liệu bạn đã nhập vẫn ở nguyên đây.</p>{error && <p className="auth-error" role="alert">{error}</p>}<form onSubmit={submit}><Field label="Email"><input required name="email" type="email" autoComplete="email" placeholder="ban@email.com" /></Field><Field label="Mật khẩu"><input required name="password" type="password" minLength={10} autoComplete="new-password" placeholder="Tối thiểu 10 ký tự" /></Field><Field label="Xác nhận mật khẩu"><input required name="confirmPassword" type="password" minLength={10} autoComplete="new-password" placeholder="Nhập lại mật khẩu" /></Field><FormActions saving={saving} close={close} label="Tạo tài khoản & giữ dữ liệu" /></form></ModalFrame>;
 }
 
 function TaskList({ tasks, plans, today, onToggle, onRemove, empty }: { tasks: Task[]; plans: Plan[]; today: string; onToggle: (task: Task) => void; onRemove: (id: number) => void; empty: string }) {

@@ -1,6 +1,6 @@
 # Kết nối đăng nhập xã hội
 
-Email/mật khẩu và Sign in with ChatGPT hoạt động ngay sau khi triển khai. Google, Facebook và GitHub được hỗ trợ trong mã nguồn, nhưng mỗi nền tảng cần một OAuth application do chủ dự án tạo.
+Chế độ dùng nhanh và email/mật khẩu hoạt động ngay sau khi triển khai. Google, Facebook và GitHub được hỗ trợ trong mã nguồn, nhưng mỗi nền tảng cần một OAuth application do chủ dự án tạo.
 
 Không đưa App Secret vào GitHub hay gửi qua chat. Lưu chúng dưới dạng environment secret của website.
 

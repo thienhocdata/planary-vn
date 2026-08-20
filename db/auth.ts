@@ -114,44 +114,22 @@ async function userFromSession(request: Request) {
   const db = getDb();
   const [match] = await db.select({ user: users }).from(sessions).innerJoin(users, eq(sessions.userId, users.id))
     .where(and(eq(sessions.tokenHash, await digest(token)), gt(sessions.expiresAt, new Date().toISOString()))).limit(1);
-  return match ? asAuthUser(match.user, "password") : null;
-}
-
-function chatGPTIdentity(request: Request) {
-  const id = request.headers.get("oai-authenticated-user-id");
-  const email = request.headers.get("oai-authenticated-user-email");
-  const encodedName = request.headers.get("oai-authenticated-user-full-name");
-  const encoding = request.headers.get("oai-authenticated-user-full-name-encoding");
-  let displayName = email || "Bạn";
-  if (encodedName && encoding === "percent-encoded-utf-8") {
-    try { displayName = decodeURIComponent(encodedName); } catch { /* Keep the email fallback. */ }
-  }
-  return id && email ? { id, email: normalizeEmail(email), displayName } : null;
-}
-
-async function userFromChatGPT(request: Request) {
-  const identity = chatGPTIdentity(request);
-  if (!identity) return null;
-  const db = getDb();
-  const [knownIdentity] = await db.select().from(authIdentities)
-    .where(and(eq(authIdentities.provider, "chatgpt"), eq(authIdentities.providerAccountId, identity.id))).limit(1);
-  if (knownIdentity) {
-    const [user] = await db.select().from(users).where(eq(users.id, knownIdentity.userId)).limit(1);
-    return user ? asAuthUser(user, "chatgpt") : null;
-  }
-  const [emailUser] = await db.select().from(users).where(eq(users.email, identity.email)).limit(1);
-  const [user] = emailUser ? [emailUser] : await db.insert(users).values({ email: identity.email, displayName: identity.displayName }).returning();
-  await db.insert(authIdentities).values({ userId: user.id, provider: "chatgpt", providerAccountId: identity.id }).onConflictDoNothing();
-  await claimLegacyData(user.id);
-  return asAuthUser(user, "chatgpt");
+  return match ? asAuthUser(match.user, match.user.email ? "password" : "guest") : null;
 }
 
 export async function getCurrentUser(request: Request) {
   await ensureDb();
-  return await userFromSession(request) || await userFromChatGPT(request);
+  return await userFromSession(request);
 }
 
-export async function registerWithPassword(request: Request, emailInput: string, password: string) {
+export async function continueAsGuest(request: Request) {
+  await ensureDb();
+  const db = getDb();
+  const [user] = await db.insert(users).values({ displayName: "Khách" }).returning();
+  return { user: asAuthUser(user, "guest"), cookie: await createSession(user.id, request) };
+}
+
+export async function registerWithPassword(request: Request, emailInput: string, password: string, upgradeUserId?: number) {
   await ensureDb();
   const email = normalizeEmail(emailInput);
   assertPassword(password);
@@ -159,13 +137,12 @@ export async function registerWithPassword(request: Request, emailInput: string,
   const [existing] = await db.select().from(users).where(eq(users.email, email)).limit(1);
   if (existing) throw new Error("Email này đã có tài khoản. Hãy đăng nhập.");
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const [user] = await db.insert(users).values({
-    email,
-    displayName: displayNameForEmail(email),
-    passwordSalt: base64(salt),
-    passwordHash: await passwordDigest(password, salt),
-  }).returning();
-  await claimLegacyData(user.id);
+  const passwordSalt = base64(salt);
+  const passwordHash = await passwordDigest(password, salt);
+  const [user] = upgradeUserId
+    ? await db.update(users).set({ email, displayName: displayNameForEmail(email), passwordSalt, passwordHash, updatedAt: new Date().toISOString() }).where(eq(users.id, upgradeUserId)).returning()
+    : await db.insert(users).values({ email, displayName: displayNameForEmail(email), passwordSalt, passwordHash }).returning();
+  if (!upgradeUserId) await claimLegacyData(user.id);
   return { user: asAuthUser(user, "password"), cookie: await createSession(user.id, request) };
 }
 
