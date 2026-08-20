@@ -21,6 +21,8 @@ function iso(date = new Date()) {
 }
 function monthKey(date = new Date()) { return iso(date).slice(0, 7); }
 function mondayOf(date = new Date()) { const next = new Date(date); next.setDate(next.getDate() - ((next.getDay() + 6) % 7)); return iso(next); }
+function addDays(value: string, amount: number) { const next = new Date(`${value}T12:00:00`); next.setDate(next.getDate() + amount); return iso(next); }
+function daysBetween(from: string, to: string) { return Math.round((new Date(`${to}T12:00:00`).getTime() - new Date(`${from}T12:00:00`).getTime()) / 86_400_000); }
 function niceDate(value: string | null, fallback = "Chưa đặt hạn") {
   if (!value) return fallback;
   return new Intl.DateTimeFormat("vi-VN", { day: "numeric", month: "short", year: "numeric" }).format(new Date(`${value}T12:00:00`));
@@ -44,13 +46,18 @@ export default function Home() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const today = iso();
+  const [today, setToday] = useState(() => iso());
   const [year, monthNumber] = month.split("-").map(Number);
   const numberOfDays = new Date(year, monthNumber, 0).getDate();
   const days = Array.from({ length: numberOfDays }, (_, index) => index + 1);
   const isCurrentMonth = month === today.slice(0, 7);
   const elapsedDays = isCurrentMonth ? Math.min(Number(today.slice(8, 10)), numberOfDays) : month < today.slice(0, 7) ? numberOfDays : 0;
   const dateAt = (day: number) => `${month}-${String(day).padStart(2, "0")}`;
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setToday(iso()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -93,7 +100,15 @@ export default function Home() {
   const todayTasks = scopedTasks.filter((task) => !task.completed && task.dueDate === today);
   const weekDates = Array.from({ length: 7 }, (_, index) => { const date = new Date(); date.setDate(date.getDate() + index); return iso(date); });
   const weekTasks = scopedTasks.filter((task) => !!task.dueDate && weekDates.includes(task.dueDate));
-  const openGoals = scopedGoals.filter((goal) => goal.status !== "done");
+  const goalTimeline = (goal: Goal) => {
+    const start = goal.createdAt ? iso(new Date(goal.createdAt)) : today;
+    if (!goal.targetDate) return { start, elapsed: 0, total: 0, remaining: 0, progress: 0, hasTarget: false };
+    const total = Math.max(1, daysBetween(start, goal.targetDate));
+    const elapsed = Math.min(total, Math.max(0, daysBetween(start, today)));
+    return { start, elapsed, total, remaining: Math.max(0, total - elapsed), progress: Math.round(elapsed / total * 100), hasTarget: true };
+  };
+  const openGoals = scopedGoals.filter((goal) => !goalTimeline(goal).hasTarget || goalTimeline(goal).progress < 100);
+  const completedGoals = goals.filter((goal) => goalTimeline(goal).hasTarget && goalTimeline(goal).progress === 100);
   const selectedPlan = plans.find((plan) => plan.id === planFilter);
   const currentWeekStart = mondayOf();
   const currentReview = reviews.find((review) => review.weekStart === currentWeekStart);
@@ -146,11 +161,6 @@ export default function Home() {
     const response = await fetch("/api/data", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: task.id, completed }) });
     if (!response.ok) { setTasks(previous); setError("Chưa thể cập nhật công việc."); }
   }
-  async function moveGoal(goal: Goal, direction: number) {
-    const progress = Math.min(100, Math.max(0, goal.progress + direction)); const previous = goals; setGoals((items) => items.map((item) => item.id === goal.id ? { ...item, progress, status: progress === 100 ? "done" : "active" } : item));
-    const response = await fetch("/api/data", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ type: "goal", id: goal.id, progress }) });
-    if (!response.ok) { setGoals(previous); setError("Chưa thể cập nhật mục tiêu."); }
-  }
   async function remove(kind: "task" | "habit" | "goal", id: number) {
     const response = await fetch(`/api/data?kind=${kind}&id=${id}`, { method: "DELETE" });
     if (!response.ok) return setError("Chưa thể xóa mục này.");
@@ -190,14 +200,14 @@ export default function Home() {
 
           {section === "overview" && <>
             <section className="hero"><div><p className="eyebrow">TỔNG QUAN · {new Intl.DateTimeFormat("vi-VN", { month: "long", year: "numeric" }).format(new Date())}</p><h1>Biến kế hoạch<br />thành <em>nhịp sống.</em></h1><p>Một bức tranh liền mạch từ mục tiêu dài hạn đến việc bạn làm mỗi ngày.</p></div><div className="month-score" style={{ "--score": `${habitRate * 3.6}deg` } as React.CSSProperties}><div><strong>{habitRate}%</strong><span>nhịp tháng</span></div></div></section>
-            <section className="metric-strip"><article><span>CHECK-IN THÁNG NÀY</span><MetricNumber value={monthLogs.length} /><small>lần giữ nhịp</small></article><article><span>VIỆC HÔM NAY</span><MetricNumber value={todayTasks.length} /><small>{todayTasks.filter((item) => item.priority === "high").length} việc quan trọng</small></article><article><span>MỤC TIÊU ĐANG CHẠY</span><MetricNumber value={openGoals.length} /><small>{goals.filter((goal) => goal.status === "done").length} đã về đích</small></article><article className="principle"><span>NGUYÊN TẮC THÁNG</span><p>Tiến bộ nhỏ, đều đặn<br />quan trọng hơn hoàn hảo.</p></article></section>
+            <section className="metric-strip"><article><span>CHECK-IN THÁNG NÀY</span><MetricNumber value={monthLogs.length} /><small>lần giữ nhịp</small></article><article><span>VIỆC HÔM NAY</span><MetricNumber value={todayTasks.length} /><small>{todayTasks.filter((item) => item.priority === "high").length} việc quan trọng</small></article><article><span>MỤC TIÊU ĐANG CHẠY</span><MetricNumber value={openGoals.length} /><small>{completedGoals.length} đã đến đích</small></article><article className="principle"><span>NGUYÊN TẮC THÁNG</span><p>Tiến bộ nhỏ, đều đặn<br />quan trọng hơn hoàn hảo.</p></article></section>
             <section className="analytics-grid">
               <article className="panel trend"><div className="panel-head"><div><p className="eyebrow">BIẾN ĐỘNG HÀNG NGÀY</p><h2>Nhịp thói quen</h2></div><button onClick={() => setSection("habits")}>Mở bảng theo dõi →</button></div><div className="daily-chart">{dailyCounts.map((count, index) => <div className="bar-column" key={index}><i style={{ height: `${Math.max(4, count / maxDaily * 100)}%` }} /><span>{[0, 6, 13, 20, 27, numberOfDays - 1].includes(index) ? index + 1 : ""}</span></div>)}</div><div className="chart-foot"><span><i /> Mỗi cột là số lần check-in trong ngày</span><b>Cao nhất {maxDaily} lần/ngày</b></div></article>
               <article className="panel completion"><p className="eyebrow">CƠ CẤU HOÀN THÀNH</p><div className="big-ring" style={{ "--score": `${habitRate * 3.6}deg` } as React.CSSProperties}><div><strong>{monthLogs.length}</strong><span>/ {totalExpected || 0} mục tiêu</span></div></div><h3>{habitRate >= 80 ? "Nhịp rất tốt" : habitRate >= 50 ? "Đang tạo đà" : "Cứ bắt đầu nhỏ"}</h3><p>{habitRate}% khối lượng thói quen dự kiến đã hoàn thành.</p></article>
               <article className="panel week-panel"><div className="panel-head"><div><p className="eyebrow">TỔNG QUAN THEO TUẦN</p><h2>Độ ổn định</h2></div></div><div className="weekly-bars">{weekly.map((item) => <div key={item.label}><div className="week-bar"><i style={{ height: `${Math.max(5, item.rate)}%` }} /></div><strong>{item.rate}%</strong><span>{item.label.replace("Tuần ", "T")}</span></div>)}</div></article>
               <article className="panel top-panel"><div className="panel-head"><div><p className="eyebrow">TOP THÓI QUEN</p><h2>Đang giữ nhịp tốt</h2></div></div><div className="rank-list">{topHabits.map((habit, index) => <div key={habit.id}><b>{String(index + 1).padStart(2, "0")}</b><span><strong>{habit.name}</strong><small>{checksFor(habit)} lần trong tháng</small></span><em>{rateFor(habit)}%</em></div>)}</div></article>
             </section>
-            <section className="two-columns"><article className="panel today-panel"><div className="panel-head"><div><p className="eyebrow">HÀNH ĐỘNG</p><h2>Việc quan trọng hôm nay</h2></div><button onClick={() => setModal("task")}>+ Thêm việc</button></div><TaskList tasks={todayTasks} plans={plans} today={today} onToggle={toggleTask} onRemove={(id) => remove("task", id)} empty="Hôm nay chưa có việc. Hãy chọn 1–3 việc thật sự quan trọng." /></article><article className="panel goals-preview"><div className="panel-head"><div><p className="eyebrow">KẾT QUẢ</p><h2>Mục tiêu trọng tâm</h2></div><button onClick={() => setSection("goals")}>Xem tất cả →</button></div>{openGoals.slice(0, 3).map((goal) => <div className="goal-row" key={goal.id}><div><strong>{goal.title}</strong><small>{niceDate(goal.targetDate)}</small></div><span><i style={{ width: `${goal.progress}%` }} /></span><b>{goal.progress}%</b></div>)}{!openGoals.length && <div className="compact-empty"><b>Chưa có mục tiêu trọng tâm.</b><button onClick={() => setModal("goal")}>Tạo mục tiêu đầu tiên</button></div>}</article></section>
+            <section className="two-columns"><article className="panel today-panel"><div className="panel-head"><div><p className="eyebrow">HÀNH ĐỘNG</p><h2>Việc quan trọng hôm nay</h2></div><button onClick={() => setModal("task")}>+ Thêm việc</button></div><TaskList tasks={todayTasks} plans={plans} today={today} onToggle={toggleTask} onRemove={(id) => remove("task", id)} empty="Hôm nay chưa có việc. Hãy chọn 1–3 việc thật sự quan trọng." /></article><article className="panel goals-preview"><div className="panel-head"><div><p className="eyebrow">KẾT QUẢ</p><h2>Mục tiêu trọng tâm</h2></div><button onClick={() => setSection("goals")}>Xem tất cả →</button></div>{openGoals.slice(0, 3).map((goal) => { const timeline = goalTimeline(goal); return <div className="goal-row" key={goal.id}><div><strong>{goal.title}</strong><small>{timeline.hasTarget ? `Ngày ${timeline.elapsed}/${timeline.total} · ${niceDate(goal.targetDate)}` : "Cần đặt ngày đích"}</small></div><span><i style={{ width: `${timeline.progress}%` }} /></span><b>{timeline.progress}%</b></div>; })}{!openGoals.length && <div className="compact-empty"><b>Chưa có mục tiêu trọng tâm.</b><button onClick={() => setModal("goal")}>Tạo mục tiêu đầu tiên</button></div>}</article></section>
           </>}
 
           {section === "habits" && <>
@@ -209,7 +219,7 @@ export default function Home() {
           {section === "goals" && <>
             <section className="page-heading"><div><p className="eyebrow">HỆ THỐNG KẾT QUẢ</p><h1>Mục tiêu có điểm đến</h1><p>Giữ ít mục tiêu, đo tiến độ thật và nối chúng với những việc bạn làm hằng tuần.</p></div><button className="primary" onClick={() => setModal("goal")}>+ Mục tiêu mới</button></section>
             <section className="goal-method"><div><span>01</span><b>Chọn kết quả</b><p>Mô tả điều bạn muốn đạt được.</p></div><i /><div><span>02</span><b>Thiết kế hệ thống</b><p>Gắn thói quen và hành động lặp lại.</p></div><i /><div><span>03</span><b>Review mỗi tuần</b><p>Đo, học và điều chỉnh nhịp độ.</p></div></section>
-            <section className="goal-board">{scopedGoals.map((goal) => { const plan = plans.find((item) => item.id === goal.planId); return <article className={`goal-card ${goal.status === "done" ? "done" : ""}`} key={goal.id}><div className="goal-card-head"><span style={{ color: plan ? palette[plan.color] : palette.sage, background: `${plan ? palette[plan.color] : palette.sage}18` }}>{plan?.name || "Chung"}</span><button onClick={() => remove("goal", goal.id)}>×</button></div><h2>{goal.title}</h2><time>Đích đến · {niceDate(goal.targetDate)}</time><div className="goal-progress"><div><i style={{ width: `${goal.progress}%` }} /></div><strong>{goal.progress}%</strong></div><div className="goal-actions"><button onClick={() => moveGoal(goal, -10)} disabled={goal.progress === 0}>−10</button><button onClick={() => moveGoal(goal, 10)} disabled={goal.progress === 100}>+10 tiến độ</button></div></article>})}{!scopedGoals.length && <div className="large-empty"><span>◎</span><h2>Bắt đầu với một kết quả rõ ràng.</h2><p>Một mục tiêu tốt có điểm đến, thời hạn và cách đo tiến độ.</p><button onClick={() => setModal("goal")}>Tạo mục tiêu</button></div>}</section>
+            <section className="goal-board">{scopedGoals.map((goal) => { const plan = plans.find((item) => item.id === goal.planId); const timeline = goalTimeline(goal); return <article className={`goal-card ${timeline.progress === 100 ? "done" : ""}`} key={goal.id}><div className="goal-card-head"><span style={{ color: plan ? palette[plan.color] : palette.sage, background: `${plan ? palette[plan.color] : palette.sage}18` }}>{plan?.name || "Chung"}</span><button onClick={() => remove("goal", goal.id)}>×</button></div><h2>{goal.title}</h2><time>{timeline.hasTarget ? `Bắt đầu · ${niceDate(timeline.start)}  /  Đích · ${niceDate(goal.targetDate)}` : "Chưa đặt ngày đích"}</time><div className="goal-progress"><div><i style={{ width: `${timeline.progress}%` }} /></div><strong>{timeline.progress}%</strong></div>{timeline.hasTarget ? <div className="goal-schedule"><span>Ngày {timeline.elapsed}/{timeline.total}</span><span>{timeline.remaining ? `Còn ${timeline.remaining} ngày` : "Đã đến đích"}</span></div> : <p className="goal-missing-date">Thêm ngày đích để Planary tự tính tiến độ.</p>}</article>; })}{!scopedGoals.length && <div className="large-empty"><span>◎</span><h2>Bắt đầu với một kết quả rõ ràng.</h2><p>Một mục tiêu tốt có điểm đến, thời hạn và cách đo tiến độ.</p><button onClick={() => setModal("goal")}>Tạo mục tiêu</button></div>}</section>
           </>}
 
           {section === "week" && <>
@@ -221,7 +231,7 @@ export default function Home() {
 
           {section === "review" && <>
             <section className="page-heading review-heading"><div><p className="eyebrow">KHÉP LẠI ĐỂ TIẾN LÊN</p><h1>Review tuần</h1><p>Dừng lại 10 phút để nhìn sự thật, giữ điều hiệu quả và bỏ bớt điều không còn phù hợp.</p></div><div className="week-badge"><span>TUẦN BẮT ĐẦU</span><strong>{niceDate(currentWeekStart, "")}</strong></div></section>
-            <section className="review-snapshot"><article><span>VIỆC ĐÃ XONG</span><strong>{weekTasks.filter((task) => task.completed).length}<small>/{weekTasks.length}</small></strong><p>trong 7 ngày</p></article><article><span>NHỊP THÓI QUEN</span><strong>{habitRate}%</strong><p>{monthLogs.length} lần check-in tháng này</p></article><article><span>MỤC TIÊU TIẾN TRIỂN</span><strong>{openGoals.filter((goal) => goal.progress > 0).length}</strong><p>mục tiêu đang có đà</p></article><article className="review-streak"><span>LỊCH SỬ REVIEW</span><strong>{reviews.length}</strong><p>tuần đã ghi lại</p></article></section>
+            <section className="review-snapshot"><article><span>VIỆC ĐÃ XONG</span><strong>{weekTasks.filter((task) => task.completed).length}<small>/{weekTasks.length}</small></strong><p>trong 7 ngày</p></article><article><span>NHỊP THÓI QUEN</span><strong>{habitRate}%</strong><p>{monthLogs.length} lần check-in tháng này</p></article><article><span>MỤC TIÊU TIẾN TRIỂN</span><strong>{openGoals.filter((goal) => goalTimeline(goal).progress > 0).length}</strong><p>mục tiêu đang có đà</p></article><article className="review-streak"><span>LỊCH SỬ REVIEW</span><strong>{reviews.length}</strong><p>tuần đã ghi lại</p></article></section>
             <section className="review-layout">
               <form className="review-form" id="review-form" key={currentReview?.updatedAt || currentWeekStart} onSubmit={submitReview}>
                 <div className="review-form-head"><div><span>01</span><div><h2>Nhìn lại tuần này</h2><p>Viết ngắn, thật và cụ thể.</p></div></div><b>{currentReview ? "Đã lưu" : "Bản mới"}</b></div>
@@ -240,7 +250,7 @@ export default function Home() {
 
     {modal === "task" && <ModalFrame title="Việc mới" eyebrow="HÀNH ĐỘNG CỤ THỂ" close={() => setModal(null)}><form onSubmit={submitTask}><Field label="Việc bạn sẽ làm"><input name="title" required placeholder="Ví dụ: Hoàn thành bản nháp đầu tiên" /></Field><Field label="Ghi chú"><textarea name="note" placeholder="Kết quả mong đợi hoặc bước tiếp theo..." /></Field><div className="form-row"><Field label="Mảng cuộc sống"><PlanSelect plans={plans} selected={planFilter} /></Field><Field label="Ngày thực hiện"><input name="dueDate" type="date" defaultValue={today} /></Field></div><Field label="Mức ưu tiên"><select name="priority" defaultValue="normal"><option value="low">Nhẹ nhàng</option><option value="normal">Bình thường</option><option value="high">Quan trọng</option></select></Field><FormActions saving={saving} close={() => setModal(null)} label="Thêm vào tuần" /></form></ModalFrame>}
     {modal === "habit" && <ModalFrame title="Thói quen mới" eyebrow="HỆ THỐNG LẶP LẠI" close={() => setModal(null)}><form onSubmit={submitHabit}><Field label="Thói quen bạn muốn xây"><input name="name" required placeholder="Ví dụ: Đi bộ 30 phút" /></Field><div className="form-row"><Field label="Thuộc mảng"><PlanSelect plans={plans} selected={planFilter} /></Field><Field label="Tần suất mỗi tuần"><select name="targetPerWeek" defaultValue="5">{[1,2,3,4,5,6,7].map((count) => <option value={count} key={count}>{count} ngày / tuần</option>)}</select></Field></div><ColorPicker /><FormActions saving={saving} close={() => setModal(null)} label="Tạo thói quen" /></form></ModalFrame>}
-    {modal === "goal" && <ModalFrame title="Mục tiêu mới" eyebrow="KẾT QUẢ CÓ THỂ ĐO" close={() => setModal(null)}><form onSubmit={submitGoal}><Field label="Kết quả bạn muốn đạt"><input name="title" required placeholder="Ví dụ: Hoàn thành chứng chỉ tiếng Anh B2" /></Field><div className="form-row"><Field label="Thuộc mảng"><PlanSelect plans={plans} selected={planFilter} /></Field><Field label="Đích đến"><input name="targetDate" type="date" /></Field></div><div className="form-hint"><b>Gợi ý:</b> Viết mục tiêu dưới dạng kết quả đã đạt, không phải một danh sách việc.</div><FormActions saving={saving} close={() => setModal(null)} label="Tạo mục tiêu" /></form></ModalFrame>}
+    {modal === "goal" && <ModalFrame title="Mục tiêu mới" eyebrow="KẾT QUẢ CÓ THỂ ĐO" close={() => setModal(null)}><form onSubmit={submitGoal}><Field label="Kết quả bạn muốn đạt"><input name="title" required placeholder="Ví dụ: Hoàn thành chứng chỉ tiếng Anh B2" /></Field><div className="form-row"><Field label="Thuộc mảng"><PlanSelect plans={plans} selected={planFilter} /></Field><Field label="Ngày đích (Planary tự tính tiến độ)"><input name="targetDate" type="date" required min={today} defaultValue={addDays(today, 100)} /></Field></div><div className="form-hint"><b>Tiến độ tự động:</b> Planary lấy hôm nay và ngày đích để chia đều nhịp theo từng ngày — mục tiêu 100 ngày sẽ tăng khoảng 1% mỗi ngày.</div><FormActions saving={saving} close={() => setModal(null)} label="Tạo mục tiêu" /></form></ModalFrame>}
     {modal === "plan" && <ModalFrame title="Mảng cuộc sống mới" eyebrow="MỘT KHÔNG GIAN RIÊNG" close={() => setModal(null)} small><form onSubmit={submitPlan}><Field label="Tên mảng"><input name="name" required placeholder="Ví dụ: Học tập" /></Field><ColorPicker /><FormActions saving={saving} close={() => setModal(null)} label="Tạo mảng" /></form></ModalFrame>}
     {accountModal && <AccountUpgrade close={() => setAccountModal(false)} />}
   </main>;

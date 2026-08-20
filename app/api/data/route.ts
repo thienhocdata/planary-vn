@@ -72,7 +72,9 @@ export async function POST(request: Request) {
     if (body.type === "goal") {
       const title = String(body.title || "").trim();
       if (!title) return Response.json({ error: "Tên mục tiêu là bắt buộc." }, { status: 400 });
-      const [goal] = await db.insert(goals).values({ userId: user.id, title, planId: await ownedPlanId(user.id, body.planId), targetDate: String(body.targetDate || "") || null }).returning();
+      const targetDate = String(body.targetDate || "");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) return Response.json({ error: "Hãy chọn ngày đích để Planary tự tính tiến độ." }, { status: 400 });
+      const [goal] = await db.insert(goals).values({ userId: user.id, title, planId: await ownedPlanId(user.id, body.planId), targetDate }).returning();
       return Response.json({ goal }, { status: 201 });
     }
     if (body.type === "habit") {
@@ -109,14 +111,9 @@ export async function PATCH(request: Request) {
   try {
     const user = await getCurrentUser(request);
     if (!user) return signedOut();
-    const body = (await request.json()) as { type?: string; id?: number; completed?: boolean; progress?: number };
+    const body = (await request.json()) as { id?: number; completed?: boolean };
     if (!body.id) return Response.json({ error: "Yêu cầu không hợp lệ." }, { status: 400 });
     const db = getDb();
-    if (body.type === "goal") {
-      const progress = Math.min(100, Math.max(0, Number(body.progress) || 0));
-      const [goal] = await db.update(goals).set({ progress, status: progress === 100 ? "done" : "active" }).where(and(eq(goals.id, body.id), eq(goals.userId, user.id))).returning();
-      return goal ? Response.json({ goal }) : Response.json({ error: "Không tìm thấy mục tiêu." }, { status: 404 });
-    }
     if (typeof body.completed !== "boolean") return Response.json({ error: "Yêu cầu không hợp lệ." }, { status: 400 });
     const [task] = await db.update(tasks).set({ completed: body.completed }).where(and(eq(tasks.id, body.id), eq(tasks.userId, user.id))).returning();
     return task ? Response.json({ task }) : Response.json({ error: "Không tìm thấy công việc." }, { status: 404 });

@@ -136,3 +136,6 @@ body{background:radial-gradient(circle at 88% 5%,#fff1df 0,transparent 22%),radi
 @keyframes metric-underline{from{transform:scaleX(.04);opacity:0}to{transform:scaleX(1);opacity:1}}
 @keyframes principle-breathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
 @media(max-width:720px){.profile-actions button{padding:5px 6px;font-size:7px}}
+
+/* Scheduled goals are calculated from their calendar, never nudged manually. */
+.goal-schedule{display:flex;justify-content:space-between;gap:10px;margin-top:13px;padding-top:12px;border-top:1px solid #e6ece7;color:#75837b;font-size:8px;font-weight:700}.goal-schedule span:last-child{color:var(--green)}.goal-card.done .goal-schedule span:last-child{color:#8c6f49}.goal-missing-date{margin:13px 0 0;padding:10px;border-radius:8px;background:#fff4ed;color:#9b654f;font-size:8px;line-height:1.5}
