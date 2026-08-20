@@ -78,3 +78,25 @@ body{background:radial-gradient(circle at 88% 5%,#fff1df 0,transparent 22%),radi
 .day-column:nth-child(7n+1) header{background:#fff8f2}.day-column:nth-child(7n+2) header{background:#f1faf4}.day-column:nth-child(7n+3) header{background:#f5f2fc}.day-column:nth-child(7n+4) header{background:#eff7fb}.day-column:nth-child(7n+5) header{background:#fbf7ea}.day-column:nth-child(7n+6) header{background:#fff1f1}.day-column:nth-child(7n) header{background:#f3f7f4}
 .review-side>section:first-child{background:linear-gradient(145deg,#e7f3e9,#f8fcf8)}.review-form-head>div>span{background:linear-gradient(145deg,#dff1e5,#f5dfcf)}
 @media(max-width:720px){.panel:hover,.goal-card:hover{transform:none}.metric-strip article:after{width:62px;height:62px}}
+
+/* Gentle motion: feedback and rhythm, kept deliberately quiet. */
+@media(prefers-reduced-motion:no-preference){
+  .hero:before{animation:orbit-soft 13s ease-in-out infinite}
+  .hero:after{animation:float-glow 10s ease-in-out infinite alternate}
+  .month-score,.big-ring{animation:ring-arrive .8s cubic-bezier(.22,.8,.28,1) both}
+  .daily-chart .bar-column i{transform-origin:bottom;animation:chart-rise .6s cubic-bezier(.22,.8,.28,1) both}
+  .daily-chart .bar-column:nth-child(1) i{animation-delay:.03s}.daily-chart .bar-column:nth-child(2) i{animation-delay:.06s}.daily-chart .bar-column:nth-child(3) i{animation-delay:.09s}.daily-chart .bar-column:nth-child(4) i{animation-delay:.12s}.daily-chart .bar-column:nth-child(5) i{animation-delay:.15s}.daily-chart .bar-column:nth-child(6) i{animation-delay:.18s}.daily-chart .bar-column:nth-child(7) i{animation-delay:.21s}.daily-chart .bar-column:nth-child(8) i{animation-delay:.24s}.daily-chart .bar-column:nth-child(9) i{animation-delay:.27s}.daily-chart .bar-column:nth-child(10) i{animation-delay:.3s}.daily-chart .bar-column:nth-child(11) i{animation-delay:.33s}.daily-chart .bar-column:nth-child(12) i{animation-delay:.36s}
+  .weekly-bars .week-bar i{transform-origin:bottom;animation:chart-rise .65s cubic-bezier(.22,.8,.28,1) both}.weekly-bars>div:nth-child(2) i{animation-delay:.1s}.weekly-bars>div:nth-child(3) i{animation-delay:.2s}.weekly-bars>div:nth-child(4) i{animation-delay:.3s}.weekly-bars>div:nth-child(5) i{animation-delay:.4s}
+  .task-item.done{animation:task-done .46s cubic-bezier(.2,.85,.3,1)}.task-item.done .check{animation:check-pop .38s cubic-bezier(.2,.9,.3,1)}
+  .habit-cell.checked{animation:check-pop .3s cubic-bezier(.2,.9,.3,1)}
+  .habit-progress i,.goal-progress i,.goal-row i{transform-origin:left;animation:progress-fill .65s cubic-bezier(.22,.8,.28,1) both}
+  .review-snapshot article{animation:card-arrive .45s ease both}.review-snapshot article:nth-child(2){animation-delay:.06s}.review-snapshot article:nth-child(3){animation-delay:.12s}.review-snapshot article:nth-child(4){animation-delay:.18s}
+}
+@keyframes orbit-soft{0%,100%{transform:translate3d(0,0,0) rotate(0deg)}50%{transform:translate3d(-11px,9px,0) rotate(8deg)}}
+@keyframes float-glow{from{transform:translate3d(0,0,0) scale(1)}to{transform:translate3d(-17px,12px,0) scale(1.04)}}
+@keyframes ring-arrive{from{opacity:0;transform:scale(.84) rotate(-12deg)}to{opacity:1;transform:scale(1) rotate(0)}}
+@keyframes chart-rise{from{transform:scaleY(.06);opacity:.3}to{transform:scaleY(1);opacity:1}}
+@keyframes task-done{0%{background:#fff7df;transform:translateX(-4px)}58%{background:#e7f5eb;transform:translateX(2px)}100%{background:transparent;transform:translateX(0)}}
+@keyframes check-pop{0%{transform:scale(.55);filter:brightness(1.25)}65%{transform:scale(1.2)}100%{transform:scale(1);filter:brightness(1)}}
+@keyframes progress-fill{from{transform:scaleX(.03)}to{transform:scaleX(1)}}
+@keyframes card-arrive{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:translateY(0)}}
