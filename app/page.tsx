@@ -8,6 +8,7 @@ type Goal = { id: number; planId: number | null; title: string; targetDate: stri
 type Habit = { id: number; planId: number | null; name: string; targetPerWeek: number; color: string; active: boolean; createdAt: string };
 type HabitLog = { id: number; habitId: number; logDate: string; createdAt: string };
 type WeeklyReview = { id: number; weekStart: string; wins: string; blockers: string; lessons: string; nextFocus: string; energy: number; createdAt: string; updatedAt: string };
+type DayNote = { id: number; noteDate: string; content: string; updatedAt: string };
 type AccountUser = { id: number; email: string | null; displayName: string; provider: string };
 type Section = "overview" | "habits" | "goals" | "week" | "review";
 type Modal = "task" | "habit" | "goal" | "plan" | null;
@@ -35,11 +36,15 @@ export default function Home() {
   const [habits, setHabits] = useState<Habit[]>([]);
   const [logs, setLogs] = useState<HabitLog[]>([]);
   const [reviews, setReviews] = useState<WeeklyReview[]>([]);
+  const [dayNotes, setDayNotes] = useState<DayNote[]>([]);
   const [section, setSection] = useState<Section>("overview");
   const [planFilter, setPlanFilter] = useState<number | null>(null);
   const [modal, setModal] = useState<Modal>(null);
   const [accountModal, setAccountModal] = useState(false);
   const [month, setMonth] = useState(monthKey());
+  const [calendarWeekStart, setCalendarWeekStart] = useState(() => mondayOf());
+  const [openDayNote, setOpenDayNote] = useState<string | null>(null);
+  const [taskDate, setTaskDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [authRequired, setAuthRequired] = useState(false);
   const [user, setUser] = useState<AccountUser | null>(null);
@@ -63,7 +68,7 @@ export default function Home() {
     let active = true;
     fetch("/api/data", { cache: "no-store" })
       .then(async (response) => {
-        const data = await response.json() as { user?: AccountUser | null; plans?: Plan[]; tasks?: Task[]; goals?: Goal[]; habits?: Habit[]; habitLogs?: HabitLog[]; weeklyReviews?: WeeklyReview[]; error?: string };
+        const data = await response.json() as { user?: AccountUser | null; plans?: Plan[]; tasks?: Task[]; goals?: Goal[]; habits?: Habit[]; habitLogs?: HabitLog[]; weeklyReviews?: WeeklyReview[]; dayNotes?: DayNote[]; error?: string };
         if (response.status === 401) return { ...data, authRequired: true };
         if (!response.ok) throw new Error(data.error || "Không thể tải dữ liệu.");
         return data;
@@ -72,7 +77,7 @@ export default function Home() {
         if (!active) return;
         if (data.authRequired) { setAuthRequired(true); return; }
         setUser(data.user || null);
-        setPlans(data.plans || []); setTasks(data.tasks || []); setGoals(data.goals || []); setHabits(data.habits || []); setLogs(data.habitLogs || []); setReviews(data.weeklyReviews || []);
+        setPlans(data.plans || []); setTasks(data.tasks || []); setGoals(data.goals || []); setHabits(data.habits || []); setLogs(data.habitLogs || []); setReviews(data.weeklyReviews || []); setDayNotes(data.dayNotes || []);
       })
       .catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : "Không thể tải dữ liệu."); })
       .finally(() => { if (active) setLoading(false); });
@@ -98,8 +103,9 @@ export default function Home() {
   }).filter((_, index) => index * 7 + 1 <= numberOfDays);
   const topHabits = [...scopedHabits].sort((a, b) => rateFor(b) - rateFor(a)).slice(0, 5);
   const todayTasks = scopedTasks.filter((task) => !task.completed && task.dueDate === today);
-  const weekDates = Array.from({ length: 7 }, (_, index) => { const date = new Date(); date.setDate(date.getDate() + index); return iso(date); });
+  const weekDates = Array.from({ length: 7 }, (_, index) => addDays(calendarWeekStart, index));
   const weekTasks = scopedTasks.filter((task) => !!task.dueDate && weekDates.includes(task.dueDate));
+  const isCurrentCalendarWeek = calendarWeekStart === mondayOf(today);
   const goalTimeline = (goal: Goal) => {
     const start = goal.createdAt ? iso(new Date(goal.createdAt)) : today;
     if (!goal.targetDate) return { start, elapsed: 0, total: 0, remaining: 0, progress: 0, hasTarget: false };
@@ -122,7 +128,7 @@ export default function Home() {
 
   async function submitTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setSaving(true); setError(""); const form = new FormData(event.currentTarget);
-    try { const data = await send({ type: "task", title: form.get("title"), note: form.get("note"), planId: Number(form.get("planId")) || null, dueDate: form.get("dueDate"), priority: form.get("priority") }); setTasks((items) => [data.task as Task, ...items]); setModal(null); }
+    try { const data = await send({ type: "task", title: form.get("title"), note: form.get("note"), planId: Number(form.get("planId")) || null, dueDate: form.get("dueDate"), priority: form.get("priority") }); setTasks((items) => [data.task as Task, ...items]); setModal(null); setTaskDate(null); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "Không thể thêm việc."); } finally { setSaving(false); }
   }
   async function submitHabit(event: FormEvent<HTMLFormElement>) {
@@ -160,6 +166,12 @@ export default function Home() {
     const completed = !task.completed; const previous = tasks; setTasks((items) => items.map((item) => item.id === task.id ? { ...item, completed } : item));
     const response = await fetch("/api/data", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: task.id, completed }) });
     if (!response.ok) { setTasks(previous); setError("Chưa thể cập nhật công việc."); }
+  }
+  async function saveDayNote(noteDate: string, content: string) {
+    const previous = dayNotes; const local = { id: previous.find((item) => item.noteDate === noteDate)?.id || -Date.now(), noteDate, content, updatedAt: new Date().toISOString() };
+    setDayNotes((items) => [local, ...items.filter((item) => item.noteDate !== noteDate)]);
+    try { const data = await send({ type: "dayNote", noteDate, content }); const note = data.dayNote as DayNote; setDayNotes((items) => [note, ...items.filter((item) => item.noteDate !== noteDate)]); }
+    catch { setDayNotes(previous); setError("Chưa thể lưu ghi chú ngày này."); }
   }
   async function remove(kind: "task" | "habit" | "goal", id: number) {
     const response = await fetch(`/api/data?kind=${kind}&id=${id}`, { method: "DELETE" });
@@ -223,9 +235,10 @@ export default function Home() {
           </>}
 
           {section === "week" && <>
-            <section className="page-heading"><div><p className="eyebrow">HỆ THỐNG HÀNH ĐỘNG</p><h1>Kế hoạch 7 ngày</h1><p>Biến mục tiêu thành những bước cụ thể, phân bổ vừa sức và chừa chỗ cho cuộc sống.</p></div><button className="primary" onClick={() => setModal("task")}>+ Lên việc</button></section>
+            <section className="page-heading"><div><p className="eyebrow">THỜI KHÓA BIỂU CÁ NHÂN</p><h1>Kế hoạch 7 ngày</h1><p>Mỗi tuần là một khung T2–CN. Chọn tuần, đặt việc vào từng ngày và để lại ghi chú cho chính mình.</p></div><button className="primary" onClick={() => { setTaskDate(calendarWeekStart); setModal("task"); }}>+ Lên việc</button></section>
+            <section className="week-navigator panel"><div className="week-switch"><button aria-label="Tuần trước" onClick={() => setCalendarWeekStart((value) => addDays(value, -7))}>‹</button><div><span>{isCurrentCalendarWeek ? "TUẦN HIỆN TẠI" : "TUẦN ĐANG XEM"}</span><strong>{niceDate(calendarWeekStart, "")} — {niceDate(weekDates[6], "")}</strong></div><button aria-label="Tuần sau" onClick={() => setCalendarWeekStart((value) => addDays(value, 7))}>›</button></div><button className="week-today" disabled={isCurrentCalendarWeek} onClick={() => setCalendarWeekStart(mondayOf(today))}>Hôm nay</button></section>
             <section className="week-overview"><article><span>VIỆC TRONG TUẦN</span><strong>{weekTasks.length}</strong></article><article><span>ĐÃ HOÀN THÀNH</span><strong>{weekTasks.filter((task) => task.completed).length}</strong></article><article><span>CÒN LẠI</span><strong>{weekTasks.filter((task) => !task.completed).length}</strong></article><article><span>TRỌNG TÂM</span><strong>{weekTasks.filter((task) => task.priority === "high").length}</strong></article></section>
-            <section className="week-board">{weekDates.map((date, index) => { const items = scopedTasks.filter((task) => task.dueDate === date); return <article className={`day-column ${date === today ? "today" : ""}`} key={date}><header><span>{index === 0 ? "HÔM NAY" : new Intl.DateTimeFormat("vi-VN", { weekday: "short" }).format(new Date(`${date}T12:00:00`)).toUpperCase()}</span><strong>{Number(date.slice(8, 10))}</strong><small>THÁNG {Number(date.slice(5, 7))}</small></header><div>{items.map((task) => <button className={`week-task ${task.completed ? "done" : ""}`} key={task.id} onClick={() => toggleTask(task)}><i>{task.completed ? "✓" : ""}</i><span>{task.title}<small>{plans.find((plan) => plan.id === task.planId)?.name || "Chung"}</small></span></button>)}{!items.length && <p className="free-day">Khoảng thở</p>}</div></article>})}</section>
+            <section className="week-board">{weekDates.map((date) => { const items = scopedTasks.filter((task) => task.dueDate === date); const note = dayNotes.find((item) => item.noteDate === date); const isToday = date === today; return <article className={`day-column ${isToday ? "today" : ""}`} key={date}><header><span>{isToday ? "HÔM NAY" : new Intl.DateTimeFormat("vi-VN", { weekday: "short" }).format(new Date(`${date}T12:00:00`)).toUpperCase()}</span><strong>{Number(date.slice(8, 10))}</strong><small>THÁNG {Number(date.slice(5, 7))}</small><div className="day-menu"><button aria-label={`Thêm việc ngày ${date}`} onClick={() => { setTaskDate(date); setModal("task"); }}>+</button><button className={note?.content ? "has-note" : ""} aria-label={`Ghi chú ngày ${date}`} onClick={() => setOpenDayNote((value) => value === date ? null : date)}>⌑</button></div></header><div>{openDayNote === date && <DayNoteEditor date={date} initialValue={note?.content || ""} onClose={() => setOpenDayNote(null)} onSave={saveDayNote} />}{items.map((task) => <button className={`week-task ${task.completed ? "done" : ""}`} key={task.id} onClick={() => toggleTask(task)}><i>{task.completed ? "✓" : ""}</i><span>{task.title}<small>{plans.find((plan) => plan.id === task.planId)?.name || "Chung"}</small></span></button>)}{!items.length && !note?.content && <p className="free-day">Khoảng thở</p>}</div></article>})}</section>
             <section className="review-card"><span>REVIEW CUỐI TUẦN</span><h2>Ba câu hỏi giữ kế hoạch sống.</h2><div><p><b>01</b> Điều gì đã tiến triển?</p><p><b>02</b> Điều gì đang bị kẹt?</p><p><b>03</b> Tuần tới bỏ bớt điều gì?</p></div></section>
           </>}
 
@@ -248,7 +261,7 @@ export default function Home() {
 
     <nav className="mobile-nav" aria-label="Điều hướng di động">{nav.map((item) => <button key={item.id} className={section === item.id ? "active" : ""} onClick={() => setSection(item.id)}><span>{item.icon}</span>{item.label}</button>)}</nav>
 
-    {modal === "task" && <ModalFrame title="Việc mới" eyebrow="HÀNH ĐỘNG CỤ THỂ" close={() => setModal(null)}><form onSubmit={submitTask}><Field label="Việc bạn sẽ làm"><input name="title" required placeholder="Ví dụ: Hoàn thành bản nháp đầu tiên" /></Field><Field label="Ghi chú"><textarea name="note" placeholder="Kết quả mong đợi hoặc bước tiếp theo..." /></Field><div className="form-row"><Field label="Mảng cuộc sống"><PlanSelect plans={plans} selected={planFilter} /></Field><Field label="Ngày thực hiện"><input name="dueDate" type="date" defaultValue={today} /></Field></div><Field label="Mức ưu tiên"><select name="priority" defaultValue="normal"><option value="low">Nhẹ nhàng</option><option value="normal">Bình thường</option><option value="high">Quan trọng</option></select></Field><FormActions saving={saving} close={() => setModal(null)} label="Thêm vào tuần" /></form></ModalFrame>}
+    {modal === "task" && <ModalFrame title="Việc mới" eyebrow="HÀNH ĐỘNG CỤ THỂ" close={() => { setModal(null); setTaskDate(null); }}><form onSubmit={submitTask}><Field label="Việc bạn sẽ làm"><input name="title" required placeholder="Ví dụ: Hoàn thành bản nháp đầu tiên" /></Field><Field label="Ghi chú"><textarea name="note" placeholder="Kết quả mong đợi hoặc bước tiếp theo..." /></Field><div className="form-row"><Field label="Mảng cuộc sống"><PlanSelect plans={plans} selected={planFilter} /></Field><Field label="Ngày thực hiện"><input name="dueDate" type="date" defaultValue={taskDate || today} /></Field></div><Field label="Mức ưu tiên"><select name="priority" defaultValue="normal"><option value="low">Nhẹ nhàng</option><option value="normal">Bình thường</option><option value="high">Quan trọng</option></select></Field><FormActions saving={saving} close={() => { setModal(null); setTaskDate(null); }} label="Thêm vào tuần" /></form></ModalFrame>}
     {modal === "habit" && <ModalFrame title="Thói quen mới" eyebrow="HỆ THỐNG LẶP LẠI" close={() => setModal(null)}><form onSubmit={submitHabit}><Field label="Thói quen bạn muốn xây"><input name="name" required placeholder="Ví dụ: Đi bộ 30 phút" /></Field><div className="form-row"><Field label="Thuộc mảng"><PlanSelect plans={plans} selected={planFilter} /></Field><Field label="Tần suất mỗi tuần"><select name="targetPerWeek" defaultValue="5">{[1,2,3,4,5,6,7].map((count) => <option value={count} key={count}>{count} ngày / tuần</option>)}</select></Field></div><ColorPicker /><FormActions saving={saving} close={() => setModal(null)} label="Tạo thói quen" /></form></ModalFrame>}
     {modal === "goal" && <ModalFrame title="Mục tiêu mới" eyebrow="KẾT QUẢ CÓ THỂ ĐO" close={() => setModal(null)}><form onSubmit={submitGoal}><Field label="Kết quả bạn muốn đạt"><input name="title" required placeholder="Ví dụ: Hoàn thành chứng chỉ tiếng Anh B2" /></Field><div className="form-row"><Field label="Thuộc mảng"><PlanSelect plans={plans} selected={planFilter} /></Field><Field label="Ngày đích (Planary tự tính tiến độ)"><input name="targetDate" type="date" required min={today} defaultValue={addDays(today, 100)} /></Field></div><div className="form-hint"><b>Tiến độ tự động:</b> Planary lấy hôm nay và ngày đích để chia đều nhịp theo từng ngày — mục tiêu 100 ngày sẽ tăng khoảng 1% mỗi ngày.</div><FormActions saving={saving} close={() => setModal(null)} label="Tạo mục tiêu" /></form></ModalFrame>}
     {modal === "plan" && <ModalFrame title="Mảng cuộc sống mới" eyebrow="MỘT KHÔNG GIAN RIÊNG" close={() => setModal(null)} small><form onSubmit={submitPlan}><Field label="Tên mảng"><input name="name" required placeholder="Ví dụ: Học tập" /></Field><ColorPicker /><FormActions saving={saving} close={() => setModal(null)} label="Tạo mảng" /></form></ModalFrame>}
@@ -298,6 +311,16 @@ function MetricNumber({ value }: { value: number }) {
     frame = requestAnimationFrame(tick); return () => cancelAnimationFrame(frame);
   }, [value]);
   return <strong className="metric-number">{display}</strong>;
+}
+
+function DayNoteEditor({ date, initialValue, onSave, onClose }: { date: string; initialValue: string; onSave: (date: string, content: string) => Promise<void>; onClose: () => void }) {
+  const [value, setValue] = useState(initialValue);
+  const [savingNote, setSavingNote] = useState(false);
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setSavingNote(true);
+    await onSave(date, value); setSavingNote(false); onClose();
+  }
+  return <form className="day-note" onSubmit={submit}><div><span>GHI CHÚ</span><button type="button" onClick={onClose}>×</button></div><textarea value={value} onChange={(event) => setValue(event.target.value)} placeholder="Ý định, việc cần nhớ hoặc một điều cho riêng hôm nay..." /><button disabled={savingNote}>{savingNote ? "Đang lưu..." : "Lưu ghi chú"}</button></form>;
 }
 
 function AccountUpgrade({ close }: { close: () => void }) {

@@ -124,8 +124,15 @@ export async function ensureDb() {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`),
+    d1.prepare(`CREATE TABLE IF NOT EXISTS day_notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      note_date TEXT NOT NULL,
+      content TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
   ]);
-  await Promise.all(["plans", "tasks", "goals", "habits", "habit_logs", "weekly_reviews"].map((table) => addUserColumn(d1, table)));
+  await Promise.all(["plans", "tasks", "goals", "habits", "habit_logs", "weekly_reviews", "day_notes"].map((table) => addUserColumn(d1, table)));
   await d1.batch([
     d1.prepare("CREATE INDEX IF NOT EXISTS idx_tasks_user_completed_due_date ON tasks(user_id, completed, due_date)"),
     d1.prepare("CREATE INDEX IF NOT EXISTS idx_goals_user_status ON goals(user_id, status)"),
@@ -134,6 +141,7 @@ export async function ensureDb() {
     d1.prepare("CREATE INDEX IF NOT EXISTS idx_habit_logs_user_date ON habit_logs(user_id, log_date)"),
     d1.prepare("DROP INDEX IF EXISTS idx_weekly_reviews_week_start"),
     d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_weekly_reviews_user_week_start ON weekly_reviews(user_id, week_start)"),
+    d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_day_notes_user_date ON day_notes(user_id, note_date)"),
   ]);
   await d1.prepare("PRAGMA optimize").run();
 }

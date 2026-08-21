@@ -1,7 +1,7 @@
 import { and, asc, desc, eq } from "drizzle-orm";
 import { getCurrentUser } from "../../../db/auth";
 import { ensureDb, getDb } from "../../../db";
-import { goals, habitLogs, habits, plans, tasks, weeklyReviews } from "../../../db/schema";
+import { dayNotes, goals, habitLogs, habits, plans, tasks, weeklyReviews } from "../../../db/schema";
 
 const starterPlans = [
   { name: "Cá nhân", color: "sage" },
@@ -40,13 +40,14 @@ async function snapshot(userId: number) {
   if (!planRows.length) planRows = await db.insert(plans).values(starterPlans.map((plan) => ({ ...plan, userId }))).returning();
   let habitRows = await db.select().from(habits).where(and(eq(habits.userId, userId), eq(habits.active, true))).orderBy(asc(habits.id));
   if (!habitRows.length) habitRows = await db.insert(habits).values(starterHabits.map(({ planIndex, ...habit }) => ({ ...habit, userId, planId: planRows[planIndex]?.id || null }))).returning();
-  const [taskRows, goalRows, logRows, reviewRows] = await Promise.all([
+  const [taskRows, goalRows, logRows, reviewRows, noteRows] = await Promise.all([
     db.select().from(tasks).where(eq(tasks.userId, userId)).orderBy(asc(tasks.completed), asc(tasks.dueDate), desc(tasks.id)),
     db.select().from(goals).where(eq(goals.userId, userId)).orderBy(asc(goals.status), asc(goals.targetDate), desc(goals.id)),
     db.select().from(habitLogs).where(eq(habitLogs.userId, userId)).orderBy(asc(habitLogs.logDate)),
     db.select().from(weeklyReviews).where(eq(weeklyReviews.userId, userId)).orderBy(desc(weeklyReviews.weekStart)).limit(52),
+    db.select().from(dayNotes).where(eq(dayNotes.userId, userId)).orderBy(desc(dayNotes.noteDate)).limit(365),
   ]);
-  return { plans: planRows, tasks: taskRows, goals: goalRows, habits: habitRows, habitLogs: logRows, weeklyReviews: reviewRows };
+  return { plans: planRows, tasks: taskRows, goals: goalRows, habits: habitRows, habitLogs: logRows, weeklyReviews: reviewRows, dayNotes: noteRows };
 }
 
 export async function GET(request: Request) {
@@ -99,6 +100,13 @@ export async function POST(request: Request) {
       const values = { userId: user.id, weekStart, wins: String(body.wins || "").trim(), blockers: String(body.blockers || "").trim(), lessons: String(body.lessons || "").trim(), nextFocus: String(body.nextFocus || "").trim(), energy: Math.min(5, Math.max(1, Number(body.energy) || 3)), updatedAt: new Date().toISOString() };
       const [review] = await db.insert(weeklyReviews).values(values).onConflictDoUpdate({ target: [weeklyReviews.userId, weeklyReviews.weekStart], set: values }).returning();
       return Response.json({ review });
+    }
+    if (body.type === "dayNote") {
+      const noteDate = String(body.noteDate || "");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(noteDate)) return Response.json({ error: "Ngày ghi chú không hợp lệ." }, { status: 400 });
+      const values = { userId: user.id, noteDate, content: String(body.content || "").trim(), updatedAt: new Date().toISOString() };
+      const [dayNote] = await db.insert(dayNotes).values(values).onConflictDoUpdate({ target: [dayNotes.userId, dayNotes.noteDate], set: values }).returning();
+      return Response.json({ dayNote });
     }
     const title = String(body.title || "").trim();
     if (!title) return Response.json({ error: "Nội dung công việc là bắt buộc." }, { status: 400 });

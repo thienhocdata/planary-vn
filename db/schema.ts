@@ -138,3 +138,15 @@ export const weeklyReviews = sqliteTable(
   },
   (table) => [uniqueIndex("idx_weekly_reviews_user_week_start").on(table.userId, table.weekStart)],
 );
+
+export const dayNotes = sqliteTable(
+  "day_notes",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
+    noteDate: text("note_date").notNull(),
+    content: text("content").notNull().default(""),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [uniqueIndex("idx_day_notes_user_date").on(table.userId, table.noteDate)],
+);

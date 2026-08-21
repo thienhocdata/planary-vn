@@ -1,7 +1,7 @@
 import { and, count, eq, gt } from "drizzle-orm";
 import { env } from "cloudflare:workers";
 import { ensureDb, getDb } from ".";
-import { authIdentities, goals, habitLogs, habits, oauthStates, plans, sessions, tasks, users, weeklyReviews } from "./schema";
+import { authIdentities, dayNotes, goals, habitLogs, habits, oauthStates, plans, sessions, tasks, users, weeklyReviews } from "./schema";
 
 const SESSION_COOKIE = "planary_session";
 const SESSION_DAYS = 30;
@@ -97,6 +97,7 @@ async function claimLegacyData(userId: number) {
     db.update(habits).set({ userId }).where(eq(habits.userId, null)),
     db.update(habitLogs).set({ userId }).where(eq(habitLogs.userId, null)),
     db.update(weeklyReviews).set({ userId }).where(eq(weeklyReviews.userId, null)),
+    db.update(dayNotes).set({ userId }).where(eq(dayNotes.userId, null)),
   ]);
 }
 
