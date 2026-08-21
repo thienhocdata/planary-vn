@@ -108,6 +108,15 @@ export async function POST(request: Request) {
       const [dayNote] = await db.insert(dayNotes).values(values).onConflictDoUpdate({ target: [dayNotes.userId, dayNotes.noteDate], set: values }).returning();
       return Response.json({ dayNote });
     }
+    if (body.type === "bulkTask") {
+      const title = String(body.title || "").trim(); const weekStart = String(body.weekStart || ""); const weeks = Math.min(26, Math.max(1, Number(body.weeks) || 4));
+      const weekdays = Array.isArray(body.weekdays) ? body.weekdays.map(Number).filter((day) => Number.isInteger(day) && day >= 0 && day <= 6) : [];
+      if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(weekStart) || !weekdays.length) return Response.json({ error: "Hãy nhập việc, tuần bắt đầu và ít nhất một ngày trong tuần." }, { status: 400 });
+      const start = new Date(`${weekStart}T12:00:00Z`); const dates = Array.from({ length: weeks }, (_, week) => weekdays.map((day) => { const date = new Date(start); date.setUTCDate(date.getUTCDate() + week * 7 + day); return date.toISOString().slice(0, 10); })).flat();
+      const planId = await ownedPlanId(user.id, body.planId);
+      const created = await db.insert(tasks).values(dates.map((dueDate) => ({ userId: user.id, title, note: String(body.note || "").trim(), dueDate, planId, priority: String(body.priority || "normal") }))).returning();
+      return Response.json({ tasks: created }, { status: 201 });
+    }
     const title = String(body.title || "").trim();
     if (!title) return Response.json({ error: "Nội dung công việc là bắt buộc." }, { status: 400 });
     const [task] = await db.insert(tasks).values({ userId: user.id, title, note: String(body.note || "").trim(), dueDate: String(body.dueDate || "") || null, planId: await ownedPlanId(user.id, body.planId), priority: String(body.priority || "normal") }).returning();
@@ -119,9 +128,31 @@ export async function PATCH(request: Request) {
   try {
     const user = await getCurrentUser(request);
     if (!user) return signedOut();
-    const body = (await request.json()) as { id?: number; completed?: boolean };
+    const body = (await request.json()) as Record<string, unknown> & { id?: number; completed?: boolean; type?: string; mode?: string };
     if (!body.id) return Response.json({ error: "Yêu cầu không hợp lệ." }, { status: 400 });
     const db = getDb();
+    if (body.mode === "update") {
+      if (body.type === "task") {
+        const title = String(body.title || "").trim(); if (!title) return Response.json({ error: "Nội dung công việc là bắt buộc." }, { status: 400 });
+        const [task] = await db.update(tasks).set({ title, note: String(body.note || "").trim(), dueDate: String(body.dueDate || "") || null, planId: await ownedPlanId(user.id, body.planId), priority: String(body.priority || "normal") }).where(and(eq(tasks.id, body.id), eq(tasks.userId, user.id))).returning();
+        return task ? Response.json({ task }) : Response.json({ error: "Không tìm thấy công việc." }, { status: 404 });
+      }
+      if (body.type === "habit") {
+        const name = String(body.name || "").trim(); if (!name) return Response.json({ error: "Tên thói quen là bắt buộc." }, { status: 400 });
+        const [habit] = await db.update(habits).set({ name, planId: await ownedPlanId(user.id, body.planId), targetPerWeek: Math.min(7, Math.max(1, Number(body.targetPerWeek) || 5)), color: String(body.color || "sage") }).where(and(eq(habits.id, body.id), eq(habits.userId, user.id))).returning();
+        return habit ? Response.json({ habit }) : Response.json({ error: "Không tìm thấy thói quen." }, { status: 404 });
+      }
+      if (body.type === "goal") {
+        const title = String(body.title || "").trim(); const targetDate = String(body.targetDate || ""); if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) return Response.json({ error: "Mục tiêu cần tên và ngày đích hợp lệ." }, { status: 400 });
+        const [goal] = await db.update(goals).set({ title, targetDate, planId: await ownedPlanId(user.id, body.planId) }).where(and(eq(goals.id, body.id), eq(goals.userId, user.id))).returning();
+        return goal ? Response.json({ goal }) : Response.json({ error: "Không tìm thấy mục tiêu." }, { status: 404 });
+      }
+      if (body.type === "plan") {
+        const name = String(body.name || "").trim(); if (!name) return Response.json({ error: "Tên mảng là bắt buộc." }, { status: 400 });
+        const [plan] = await db.update(plans).set({ name, color: String(body.color || "sage") }).where(and(eq(plans.id, body.id), eq(plans.userId, user.id))).returning();
+        return plan ? Response.json({ plan }) : Response.json({ error: "Không tìm thấy mảng này." }, { status: 404 });
+      }
+    }
     if (typeof body.completed !== "boolean") return Response.json({ error: "Yêu cầu không hợp lệ." }, { status: 400 });
     const [task] = await db.update(tasks).set({ completed: body.completed }).where(and(eq(tasks.id, body.id), eq(tasks.userId, user.id))).returning();
     return task ? Response.json({ task }) : Response.json({ error: "Không tìm thấy công việc." }, { status: 404 });
