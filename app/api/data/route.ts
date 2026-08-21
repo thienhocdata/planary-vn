@@ -138,6 +138,8 @@ export async function DELETE(request: Request) {
     if (kind === "dayNote") await db.delete(dayNotes).where(and(eq(dayNotes.id, id), eq(dayNotes.userId, user.id)));
     else if (kind === "habit") await db.delete(habits).where(and(eq(habits.id, id), eq(habits.userId, user.id)));
     else if (kind === "goal") await db.delete(goals).where(and(eq(goals.id, id), eq(goals.userId, user.id)));
+    else if (kind === "plan") await db.delete(plans).where(and(eq(plans.id, id), eq(plans.userId, user.id)));
+    else if (kind === "review") await db.delete(weeklyReviews).where(and(eq(weeklyReviews.id, id), eq(weeklyReviews.userId, user.id)));
     else await db.delete(tasks).where(and(eq(tasks.id, id), eq(tasks.userId, user.id)));
     return Response.json({ ok: true });
   } catch (error) { return Response.json({ error: message(error) }, { status: 500 }); }
