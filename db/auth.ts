@@ -7,6 +7,7 @@ const SESSION_COOKIE = "planary_session";
 const SESSION_DAYS = 30;
 const OAUTH_STATE_MINUTES = 10;
 const PASSWORD_ITERATIONS = 100_000;
+const MIN_PASSWORD_ITERATIONS = 10_000;
 const encoder = new TextEncoder();
 
 export type AuthUser = { id: number; email: string | null; displayName: string; provider: string };
@@ -41,6 +42,14 @@ async function passwordDigest(password: string, salt: Uint8Array, iterations = P
   const key = await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]);
   const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations }, key, 256);
   return base64(new Uint8Array(bits));
+}
+
+function passwordIterationsForUser(value: number | null) {
+  if (value === null) return PASSWORD_ITERATIONS;
+  if (!Number.isInteger(value) || value < MIN_PASSWORD_ITERATIONS || value > PASSWORD_ITERATIONS) {
+    throw new Error("Tài khoản này dùng cấu hình mật khẩu không còn được hỗ trợ. Hãy đặt lại mật khẩu để tiếp tục.");
+  }
+  return value;
 }
 
 function safeEqual(left: string, right: string) {
@@ -154,7 +163,7 @@ export async function loginWithPassword(request: Request, emailInput: string, pa
   const db = getDb();
   const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
   if (!user?.passwordHash || !user.passwordSalt) throw new Error("Email hoặc mật khẩu chưa đúng.");
-  const iterations = user.passwordIterations || PASSWORD_ITERATIONS;
+  const iterations = passwordIterationsForUser(user.passwordIterations);
   const computed = await passwordDigest(password, fromBase64(user.passwordSalt), iterations);
   if (!safeEqual(computed, user.passwordHash)) throw new Error("Email hoặc mật khẩu chưa đúng.");
   return { user: asAuthUser(user, "password"), cookie: await createSession(user.id, request) };
