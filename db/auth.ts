@@ -6,6 +6,7 @@ import { authIdentities, dayNotes, goals, habitLogs, habits, oauthStates, plans,
 const SESSION_COOKIE = "planary_session";
 const SESSION_DAYS = 30;
 const OAUTH_STATE_MINUTES = 10;
+const PASSWORD_ITERATIONS = 100_000;
 const encoder = new TextEncoder();
 
 export type AuthUser = { id: number; email: string | null; displayName: string; provider: string };
@@ -36,9 +37,9 @@ async function digest(value: string) {
   return base64(new Uint8Array(bytes));
 }
 
-async function passwordDigest(password: string, salt: Uint8Array) {
+async function passwordDigest(password: string, salt: Uint8Array, iterations = PASSWORD_ITERATIONS) {
   const key = await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]);
-  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations: 310_000 }, key, 256);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations }, key, 256);
   return base64(new Uint8Array(bits));
 }
 
@@ -139,10 +140,10 @@ export async function registerWithPassword(request: Request, emailInput: string,
   if (existing) throw new Error("Email này đã có tài khoản. Hãy đăng nhập.");
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const passwordSalt = base64(salt);
-  const passwordHash = await passwordDigest(password, salt);
+  const passwordHash = await passwordDigest(password, salt, PASSWORD_ITERATIONS);
   const [user] = upgradeUserId
-    ? await db.update(users).set({ email, displayName: displayNameForEmail(email), passwordSalt, passwordHash, updatedAt: new Date().toISOString() }).where(eq(users.id, upgradeUserId)).returning()
-    : await db.insert(users).values({ email, displayName: displayNameForEmail(email), passwordSalt, passwordHash }).returning();
+    ? await db.update(users).set({ email, displayName: displayNameForEmail(email), passwordSalt, passwordHash, passwordIterations: PASSWORD_ITERATIONS, updatedAt: new Date().toISOString() }).where(eq(users.id, upgradeUserId)).returning()
+    : await db.insert(users).values({ email, displayName: displayNameForEmail(email), passwordSalt, passwordHash, passwordIterations: PASSWORD_ITERATIONS }).returning();
   if (!upgradeUserId) await claimLegacyData(user.id);
   return { user: asAuthUser(user, "password"), cookie: await createSession(user.id, request) };
 }
@@ -153,7 +154,8 @@ export async function loginWithPassword(request: Request, emailInput: string, pa
   const db = getDb();
   const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
   if (!user?.passwordHash || !user.passwordSalt) throw new Error("Email hoặc mật khẩu chưa đúng.");
-  const computed = await passwordDigest(password, fromBase64(user.passwordSalt));
+  const iterations = user.passwordIterations || PASSWORD_ITERATIONS;
+  const computed = await passwordDigest(password, fromBase64(user.passwordSalt), iterations);
   if (!safeEqual(computed, user.passwordHash)) throw new Error("Email hoặc mật khẩu chưa đúng.");
   return { user: asAuthUser(user, "password"), cookie: await createSession(user.id, request) };
 }

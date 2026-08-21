@@ -7,6 +7,7 @@ export const users = sqliteTable("users", {
   displayName: text("display_name").notNull(),
   passwordHash: text("password_hash"),
   passwordSalt: text("password_salt"),
+  passwordIterations: integer("password_iterations").notNull().default(100000),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });

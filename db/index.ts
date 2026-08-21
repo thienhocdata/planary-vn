@@ -23,6 +23,12 @@ async function addUserColumn(d1: D1Database, table: string) {
   }
 }
 
+async function addPasswordIterationColumn(d1: D1Database) {
+  if (!await hasColumn(d1, "users", "password_iterations")) {
+    await d1.prepare("ALTER TABLE users ADD COLUMN password_iterations INTEGER NOT NULL DEFAULT 100000").run();
+  }
+}
+
 export async function ensureDb() {
   if (!env.DB) throw new Error("Cloudflare D1 binding `DB` is unavailable.");
   const d1 = env.DB;
@@ -33,6 +39,7 @@ export async function ensureDb() {
       display_name TEXT NOT NULL,
       password_hash TEXT,
       password_salt TEXT,
+      password_iterations INTEGER NOT NULL DEFAULT 100000,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`),
@@ -133,6 +140,7 @@ export async function ensureDb() {
     )`),
   ]);
   await Promise.all(["plans", "tasks", "goals", "habits", "habit_logs", "weekly_reviews", "day_notes"].map((table) => addUserColumn(d1, table)));
+  await addPasswordIterationColumn(d1);
   await d1.batch([
     d1.prepare("CREATE INDEX IF NOT EXISTS idx_tasks_user_completed_due_date ON tasks(user_id, completed, due_date)"),
     d1.prepare("CREATE INDEX IF NOT EXISTS idx_goals_user_status ON goals(user_id, status)"),
