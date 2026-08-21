@@ -135,7 +135,8 @@ export async function DELETE(request: Request) {
     const url = new URL(request.url); const id = Number(url.searchParams.get("id")); const kind = url.searchParams.get("kind") || "task";
     if (!id) return Response.json({ error: "Thiếu mã dữ liệu." }, { status: 400 });
     const db = getDb();
-    if (kind === "habit") await db.delete(habits).where(and(eq(habits.id, id), eq(habits.userId, user.id)));
+    if (kind === "dayNote") await db.delete(dayNotes).where(and(eq(dayNotes.id, id), eq(dayNotes.userId, user.id)));
+    else if (kind === "habit") await db.delete(habits).where(and(eq(habits.id, id), eq(habits.userId, user.id)));
     else if (kind === "goal") await db.delete(goals).where(and(eq(goals.id, id), eq(goals.userId, user.id)));
     else await db.delete(tasks).where(and(eq(tasks.id, id), eq(tasks.userId, user.id)));
     return Response.json({ ok: true });
