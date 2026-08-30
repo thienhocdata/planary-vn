@@ -35,6 +35,12 @@ async function addTaskSortOrderColumn(d1: D1Database) {
   }
 }
 
+async function addTaskTimeSlotColumn(d1: D1Database) {
+  if (!await hasColumn(d1, "tasks", "time_slot")) {
+    await d1.prepare("ALTER TABLE tasks ADD COLUMN time_slot TEXT NOT NULL DEFAULT 'morning'").run();
+  }
+}
+
 export async function ensureDb() {
   if (!env.DB) throw new Error("Cloudflare D1 binding `DB` is unavailable.");
   const d1 = env.DB;
@@ -89,6 +95,7 @@ export async function ensureDb() {
       note TEXT NOT NULL DEFAULT '',
       due_date TEXT,
       priority TEXT NOT NULL DEFAULT 'normal',
+      time_slot TEXT NOT NULL DEFAULT 'morning',
       sort_order INTEGER NOT NULL DEFAULT 0,
       completed INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -149,9 +156,10 @@ export async function ensureDb() {
   await Promise.all(["plans", "tasks", "goals", "habits", "habit_logs", "weekly_reviews", "day_notes"].map((table) => addUserColumn(d1, table)));
   await addPasswordIterationColumn(d1);
   await addTaskSortOrderColumn(d1);
+  await addTaskTimeSlotColumn(d1);
   await d1.batch([
     d1.prepare("DROP INDEX IF EXISTS idx_tasks_user_completed_due_date"),
-    d1.prepare("CREATE INDEX IF NOT EXISTS idx_tasks_user_completed_due_date ON tasks(user_id, completed, due_date, sort_order)"),
+    d1.prepare("CREATE INDEX IF NOT EXISTS idx_tasks_user_completed_due_date ON tasks(user_id, completed, due_date, time_slot, sort_order)"),
     d1.prepare("CREATE INDEX IF NOT EXISTS idx_goals_user_status ON goals(user_id, status)"),
     d1.prepare("CREATE INDEX IF NOT EXISTS idx_habits_user_active ON habits(user_id, active)"),
     d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_habit_logs_user_habit_date ON habit_logs(user_id, habit_id, log_date)"),

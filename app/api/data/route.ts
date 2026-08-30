@@ -33,10 +33,14 @@ async function ownedPlanId(userId: number, value: unknown) {
   return plan?.id || null;
 }
 
-async function nextTaskSortOrder(userId: number, dueDate: string | null) {
+function taskTimeSlot(value: unknown) {
+  return value === "afternoon" || value === "evening" ? value : "morning";
+}
+
+async function nextTaskSortOrder(userId: number, dueDate: string | null, timeSlot: string) {
   if (!dueDate) return 0;
   const [last] = await getDb().select({ value: max(tasks.sortOrder) }).from(tasks)
-    .where(and(eq(tasks.userId, userId), eq(tasks.dueDate, dueDate)));
+    .where(and(eq(tasks.userId, userId), eq(tasks.dueDate, dueDate), eq(tasks.timeSlot, timeSlot)));
   return (last?.value ?? -1) + 1;
 }
 
@@ -122,18 +126,20 @@ export async function POST(request: Request) {
       const start = new Date(`${weekStart}T12:00:00Z`); const dates = Array.from({ length: weeks }, (_, week) => weekdays.map((day) => { const date = new Date(start); date.setUTCDate(date.getUTCDate() + week * 7 + day); return date.toISOString().slice(0, 10); })).flat();
       const planId = await ownedPlanId(user.id, body.planId);
       const uniqueDates = [...new Set(dates)];
-      const starts = new Map(await Promise.all(uniqueDates.map(async (dueDate) => [dueDate, await nextTaskSortOrder(user.id, dueDate)] as const)));
+      const timeSlot = taskTimeSlot(body.timeSlot);
+      const starts = new Map(await Promise.all(uniqueDates.map(async (dueDate) => [dueDate, await nextTaskSortOrder(user.id, dueDate, timeSlot)] as const)));
       const offsets = new Map<string, number>();
       const created = await db.insert(tasks).values(dates.map((dueDate) => {
         const offset = offsets.get(dueDate) || 0; offsets.set(dueDate, offset + 1);
-        return { userId: user.id, title, note: String(body.note || "").trim(), dueDate, planId, priority: String(body.priority || "normal"), sortOrder: (starts.get(dueDate) || 0) + offset };
+        return { userId: user.id, title, note: String(body.note || "").trim(), dueDate, planId, priority: String(body.priority || "normal"), timeSlot, sortOrder: (starts.get(dueDate) || 0) + offset };
       })).returning();
       return Response.json({ tasks: created }, { status: 201 });
     }
     const title = String(body.title || "").trim();
     if (!title) return Response.json({ error: "Nội dung công việc là bắt buộc." }, { status: 400 });
     const dueDate = String(body.dueDate || "") || null;
-    const [task] = await db.insert(tasks).values({ userId: user.id, title, note: String(body.note || "").trim(), dueDate, planId: await ownedPlanId(user.id, body.planId), priority: String(body.priority || "normal"), sortOrder: await nextTaskSortOrder(user.id, dueDate) }).returning();
+    const timeSlot = taskTimeSlot(body.timeSlot);
+    const [task] = await db.insert(tasks).values({ userId: user.id, title, note: String(body.note || "").trim(), dueDate, planId: await ownedPlanId(user.id, body.planId), priority: String(body.priority || "normal"), timeSlot, sortOrder: await nextTaskSortOrder(user.id, dueDate, timeSlot) }).returning();
     return Response.json({ task }, { status: 201 });
   } catch (error) { return Response.json({ error: message(error) }, { status: 500 }); }
 }
@@ -146,19 +152,23 @@ export async function PATCH(request: Request) {
     const db = getDb();
     if (body.mode === "reorder") {
       const dueDate = String(body.dueDate || "");
+      const timeSlot = taskTimeSlot(body.timeSlot);
       const taskIds = Array.isArray(body.taskIds) ? [...new Set(body.taskIds.map(Number).filter((id) => Number.isInteger(id) && id > 0))] : [];
       if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate) || !taskIds.length) return Response.json({ error: "Thứ tự lịch không hợp lệ." }, { status: 400 });
-      const owned = await db.select({ id: tasks.id }).from(tasks).where(and(eq(tasks.userId, user.id), eq(tasks.dueDate, dueDate), inArray(tasks.id, taskIds)));
+      const owned = await db.select({ id: tasks.id }).from(tasks).where(and(eq(tasks.userId, user.id), eq(tasks.dueDate, dueDate), eq(tasks.timeSlot, timeSlot), inArray(tasks.id, taskIds)));
       if (owned.length !== taskIds.length) return Response.json({ error: "Không thể sắp xếp lịch này." }, { status: 404 });
-      await Promise.all(taskIds.map((id, sortOrder) => db.update(tasks).set({ sortOrder }).where(and(eq(tasks.id, id), eq(tasks.userId, user.id), eq(tasks.dueDate, dueDate)))));
-      const ordered = await db.select().from(tasks).where(and(eq(tasks.userId, user.id), eq(tasks.dueDate, dueDate))).orderBy(asc(tasks.sortOrder), asc(tasks.id));
+      await Promise.all(taskIds.map((id, sortOrder) => db.update(tasks).set({ sortOrder }).where(and(eq(tasks.id, id), eq(tasks.userId, user.id), eq(tasks.dueDate, dueDate), eq(tasks.timeSlot, timeSlot)))));
+      const ordered = await db.select().from(tasks).where(and(eq(tasks.userId, user.id), eq(tasks.dueDate, dueDate), eq(tasks.timeSlot, timeSlot))).orderBy(asc(tasks.sortOrder), asc(tasks.id));
       return Response.json({ tasks: ordered });
     }
     if (!body.id) return Response.json({ error: "Yêu cầu không hợp lệ." }, { status: 400 });
     if (body.mode === "update") {
       if (body.type === "task") {
         const title = String(body.title || "").trim(); if (!title) return Response.json({ error: "Nội dung công việc là bắt buộc." }, { status: 400 });
-        const [task] = await db.update(tasks).set({ title, note: String(body.note || "").trim(), dueDate: String(body.dueDate || "") || null, planId: await ownedPlanId(user.id, body.planId), priority: String(body.priority || "normal") }).where(and(eq(tasks.id, body.id), eq(tasks.userId, user.id))).returning();
+        const dueDate = String(body.dueDate || "") || null; const timeSlot = taskTimeSlot(body.timeSlot);
+        const [previous] = await db.select({ dueDate: tasks.dueDate, timeSlot: tasks.timeSlot, sortOrder: tasks.sortOrder }).from(tasks).where(and(eq(tasks.id, body.id), eq(tasks.userId, user.id))).limit(1);
+        const sortOrder = previous && previous.dueDate === dueDate && previous.timeSlot === timeSlot ? previous.sortOrder : await nextTaskSortOrder(user.id, dueDate, timeSlot);
+        const [task] = await db.update(tasks).set({ title, note: String(body.note || "").trim(), dueDate, planId: await ownedPlanId(user.id, body.planId), priority: String(body.priority || "normal"), timeSlot, sortOrder }).where(and(eq(tasks.id, body.id), eq(tasks.userId, user.id))).returning();
         return task ? Response.json({ task }) : Response.json({ error: "Không tìm thấy công việc." }, { status: 404 });
       }
       if (body.type === "habit") {
