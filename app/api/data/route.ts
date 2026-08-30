@@ -129,10 +129,15 @@ export async function POST(request: Request) {
       const timeSlot = taskTimeSlot(body.timeSlot);
       const starts = new Map(await Promise.all(uniqueDates.map(async (dueDate) => [dueDate, await nextTaskSortOrder(user.id, dueDate, timeSlot)] as const)));
       const offsets = new Map<string, number>();
-      const created = await db.insert(tasks).values(dates.map((dueDate) => {
+      const taskValues = dates.map((dueDate) => {
         const offset = offsets.get(dueDate) || 0; offsets.set(dueDate, offset + 1);
         return { userId: user.id, title, note: String(body.note || "").trim(), dueDate, planId, priority: String(body.priority || "normal"), timeSlot, sortOrder: (starts.get(dueDate) || 0) + offset };
-      })).returning();
+      });
+      const created: Array<typeof tasks.$inferSelect> = [];
+      for (let offset = 0; offset < taskValues.length; offset += 8) {
+        const rows = await db.insert(tasks).values(taskValues.slice(offset, offset + 8)).returning();
+        created.push(...rows);
+      }
       return Response.json({ tasks: created }, { status: 201 });
     }
     const title = String(body.title || "").trim();

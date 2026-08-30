@@ -78,3 +78,9 @@ test("weekly schedule separates morning, afternoon, and evening", async () => {
   assert.match(schema, /timeSlot: text\("time_slot"\)\.notNull\(\)\.default\("morning"\)/);
   assert.match(database, /ALTER TABLE tasks ADD COLUMN time_slot TEXT NOT NULL DEFAULT 'morning'/);
 });
+
+test("recurring schedules are written in database-safe batches", async () => {
+  const route = await readFile(new URL("../app/api/data/route.ts", import.meta.url), "utf8");
+  assert.match(route, /for \(let offset = 0; offset < taskValues\.length; offset \+= 8\)/);
+  assert.match(route, /taskValues\.slice\(offset, offset \+ 8\)/);
+});
