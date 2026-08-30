@@ -69,12 +69,13 @@ export const tasks = sqliteTable(
     note: text("note").notNull().default(""),
     dueDate: text("due_date"),
     priority: text("priority").notNull().default("normal"),
+    sortOrder: integer("sort_order").notNull().default(0),
     completed: integer("completed", { mode: "boolean" }).notNull().default(false),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
   (table) => [
     index("idx_tasks_plan_id").on(table.planId),
-    index("idx_tasks_user_completed_due_date").on(table.userId, table.completed, table.dueDate),
+    index("idx_tasks_user_completed_due_date").on(table.userId, table.completed, table.dueDate, table.sortOrder),
   ],
 );
 

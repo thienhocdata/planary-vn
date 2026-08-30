@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, max } from "drizzle-orm";
 import { getCurrentUser } from "../../../db/auth";
 import { ensureDb, getDb } from "../../../db";
 import { dayNotes, goals, habitLogs, habits, plans, tasks, weeklyReviews } from "../../../db/schema";
@@ -33,6 +33,13 @@ async function ownedPlanId(userId: number, value: unknown) {
   return plan?.id || null;
 }
 
+async function nextTaskSortOrder(userId: number, dueDate: string | null) {
+  if (!dueDate) return 0;
+  const [last] = await getDb().select({ value: max(tasks.sortOrder) }).from(tasks)
+    .where(and(eq(tasks.userId, userId), eq(tasks.dueDate, dueDate)));
+  return (last?.value ?? -1) + 1;
+}
+
 async function snapshot(userId: number) {
   await ensureDb();
   const db = getDb();
@@ -41,7 +48,7 @@ async function snapshot(userId: number) {
   let habitRows = await db.select().from(habits).where(and(eq(habits.userId, userId), eq(habits.active, true))).orderBy(asc(habits.id));
   if (!habitRows.length) habitRows = await db.insert(habits).values(starterHabits.map(({ planIndex, ...habit }) => ({ ...habit, userId, planId: planRows[planIndex]?.id || null }))).returning();
   const [taskRows, goalRows, logRows, reviewRows, noteRows] = await Promise.all([
-    db.select().from(tasks).where(eq(tasks.userId, userId)).orderBy(asc(tasks.completed), asc(tasks.dueDate), desc(tasks.id)),
+    db.select().from(tasks).where(eq(tasks.userId, userId)).orderBy(asc(tasks.completed), asc(tasks.dueDate), asc(tasks.sortOrder), desc(tasks.id)),
     db.select().from(goals).where(eq(goals.userId, userId)).orderBy(asc(goals.status), asc(goals.targetDate), desc(goals.id)),
     db.select().from(habitLogs).where(eq(habitLogs.userId, userId)).orderBy(asc(habitLogs.logDate)),
     db.select().from(weeklyReviews).where(eq(weeklyReviews.userId, userId)).orderBy(desc(weeklyReviews.weekStart)).limit(52),
@@ -114,12 +121,19 @@ export async function POST(request: Request) {
       if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(weekStart) || !weekdays.length) return Response.json({ error: "Hãy nhập việc, tuần bắt đầu và ít nhất một ngày trong tuần." }, { status: 400 });
       const start = new Date(`${weekStart}T12:00:00Z`); const dates = Array.from({ length: weeks }, (_, week) => weekdays.map((day) => { const date = new Date(start); date.setUTCDate(date.getUTCDate() + week * 7 + day); return date.toISOString().slice(0, 10); })).flat();
       const planId = await ownedPlanId(user.id, body.planId);
-      const created = await db.insert(tasks).values(dates.map((dueDate) => ({ userId: user.id, title, note: String(body.note || "").trim(), dueDate, planId, priority: String(body.priority || "normal") }))).returning();
+      const uniqueDates = [...new Set(dates)];
+      const starts = new Map(await Promise.all(uniqueDates.map(async (dueDate) => [dueDate, await nextTaskSortOrder(user.id, dueDate)] as const)));
+      const offsets = new Map<string, number>();
+      const created = await db.insert(tasks).values(dates.map((dueDate) => {
+        const offset = offsets.get(dueDate) || 0; offsets.set(dueDate, offset + 1);
+        return { userId: user.id, title, note: String(body.note || "").trim(), dueDate, planId, priority: String(body.priority || "normal"), sortOrder: (starts.get(dueDate) || 0) + offset };
+      })).returning();
       return Response.json({ tasks: created }, { status: 201 });
     }
     const title = String(body.title || "").trim();
     if (!title) return Response.json({ error: "Nội dung công việc là bắt buộc." }, { status: 400 });
-    const [task] = await db.insert(tasks).values({ userId: user.id, title, note: String(body.note || "").trim(), dueDate: String(body.dueDate || "") || null, planId: await ownedPlanId(user.id, body.planId), priority: String(body.priority || "normal") }).returning();
+    const dueDate = String(body.dueDate || "") || null;
+    const [task] = await db.insert(tasks).values({ userId: user.id, title, note: String(body.note || "").trim(), dueDate, planId: await ownedPlanId(user.id, body.planId), priority: String(body.priority || "normal"), sortOrder: await nextTaskSortOrder(user.id, dueDate) }).returning();
     return Response.json({ task }, { status: 201 });
   } catch (error) { return Response.json({ error: message(error) }, { status: 500 }); }
 }
@@ -129,8 +143,18 @@ export async function PATCH(request: Request) {
     const user = await getCurrentUser(request);
     if (!user) return signedOut();
     const body = (await request.json()) as Record<string, unknown> & { id?: number; completed?: boolean; type?: string; mode?: string };
-    if (!body.id) return Response.json({ error: "Yêu cầu không hợp lệ." }, { status: 400 });
     const db = getDb();
+    if (body.mode === "reorder") {
+      const dueDate = String(body.dueDate || "");
+      const taskIds = Array.isArray(body.taskIds) ? [...new Set(body.taskIds.map(Number).filter((id) => Number.isInteger(id) && id > 0))] : [];
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate) || !taskIds.length) return Response.json({ error: "Thứ tự lịch không hợp lệ." }, { status: 400 });
+      const owned = await db.select({ id: tasks.id }).from(tasks).where(and(eq(tasks.userId, user.id), eq(tasks.dueDate, dueDate), inArray(tasks.id, taskIds)));
+      if (owned.length !== taskIds.length) return Response.json({ error: "Không thể sắp xếp lịch này." }, { status: 404 });
+      await Promise.all(taskIds.map((id, sortOrder) => db.update(tasks).set({ sortOrder }).where(and(eq(tasks.id, id), eq(tasks.userId, user.id), eq(tasks.dueDate, dueDate)))));
+      const ordered = await db.select().from(tasks).where(and(eq(tasks.userId, user.id), eq(tasks.dueDate, dueDate))).orderBy(asc(tasks.sortOrder), asc(tasks.id));
+      return Response.json({ tasks: ordered });
+    }
+    if (!body.id) return Response.json({ error: "Yêu cầu không hợp lệ." }, { status: 400 });
     if (body.mode === "update") {
       if (body.type === "task") {
         const title = String(body.title || "").trim(); if (!title) return Response.json({ error: "Nội dung công việc là bắt buộc." }, { status: 400 });

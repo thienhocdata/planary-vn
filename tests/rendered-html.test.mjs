@@ -43,3 +43,20 @@ test("password KDF configuration is compatible and kept per account", async () =
   assert.match(database, /password_iterations INTEGER NOT NULL DEFAULT 100000/);
   assert.match(database, /ALTER TABLE users ADD COLUMN password_iterations INTEGER NOT NULL DEFAULT 100000/);
 });
+
+test("weekly tasks retain a user-defined display order", async () => {
+  const [page, route, schema, database] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/data/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/index.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(page, /draggable aria-label=\{`Kéo để đổi thứ tự/);
+  assert.match(page, /mode: "reorder", dueDate: date, taskIds/);
+  assert.match(page, /sort\(\(left, right\) => left\.sortOrder - right\.sortOrder \|\| left\.id - right\.id\)/);
+  assert.match(route, /body\.mode === "reorder"/);
+  assert.match(route, /set\(\{ sortOrder \}\)/);
+  assert.match(schema, /sortOrder: integer\("sort_order"\)\.notNull\(\)\.default\(0\)/);
+  assert.match(database, /ALTER TABLE tasks ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0/);
+});

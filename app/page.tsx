@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type Plan = { id: number; name: string; color: string; createdAt: string };
-type Task = { id: number; planId: number | null; title: string; note: string; dueDate: string | null; priority: string; completed: boolean; createdAt: string };
+type Task = { id: number; planId: number | null; title: string; note: string; dueDate: string | null; priority: string; sortOrder: number; completed: boolean; createdAt: string };
 type Goal = { id: number; planId: number | null; title: string; targetDate: string | null; progress: number; status: string; createdAt: string };
 type Habit = { id: number; planId: number | null; name: string; targetPerWeek: number; color: string; active: boolean; createdAt: string };
 type HabitLog = { id: number; habitId: number; logDate: string; createdAt: string };
@@ -52,6 +52,7 @@ export default function Home() {
   const [user, setUser] = useState<AccountUser | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [draggingTaskId, setDraggingTaskId] = useState<number | null>(null);
 
   const [today, setToday] = useState(() => iso());
   const [year, monthNumber] = month.split("-").map(Number);
@@ -182,6 +183,23 @@ export default function Home() {
     const response = await fetch("/api/data", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: task.id, completed }) });
     if (!response.ok) { setTasks(previous); setError("Chưa thể cập nhật công việc."); }
   }
+  async function reorderDayTasks(date: string, sourceId: number, targetId: number) {
+    if (sourceId === targetId) return;
+    const ordered = tasks.filter((task) => task.dueDate === date).sort((left, right) => left.sortOrder - right.sortOrder || left.id - right.id);
+    const sourceIndex = ordered.findIndex((task) => task.id === sourceId);
+    const targetIndex = ordered.findIndex((task) => task.id === targetId);
+    if (sourceIndex < 0 || targetIndex < 0) return;
+    const [moved] = ordered.splice(sourceIndex, 1); ordered.splice(targetIndex, 0, moved);
+    const previous = tasks; const taskIds = ordered.map((task) => task.id);
+    setTasks((items) => items.map((task) => task.dueDate === date ? { ...task, sortOrder: taskIds.indexOf(task.id) } : task));
+    try {
+      const response = await fetch("/api/data", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: "reorder", dueDate: date, taskIds }) });
+      const data = await response.json() as { tasks?: Task[]; error?: string };
+      if (!response.ok || !data.tasks) throw new Error(data.error || "Chưa thể lưu thứ tự.");
+      const order = new Map(data.tasks.map((task) => [task.id, task]));
+      setTasks((items) => items.map((task) => order.get(task.id) || task));
+    } catch (reason) { setTasks(previous); setError(reason instanceof Error ? reason.message : "Chưa thể lưu thứ tự."); }
+  }
   async function saveDayNote(noteDate: string, content: string) {
     const previous = dayNotes; const local = { id: previous.find((item) => item.noteDate === noteDate)?.id || -Date.now(), noteDate, content, updatedAt: new Date().toISOString() };
     setDayNotes((items) => [local, ...items.filter((item) => item.noteDate !== noteDate)]);
@@ -260,7 +278,14 @@ export default function Home() {
             <section className="page-heading"><div><p className="eyebrow">THỜI KHÓA BIỂU CÁ NHÂN</p><h1>Kế hoạch 7 ngày</h1><p>Mỗi tuần là một khung T2–CN. Chọn tuần, đặt việc vào từng ngày và để lại ghi chú cho chính mình.</p></div><div className="week-heading-actions"><button className="secondary" onClick={() => setModal("bulkTask")}>↻ Lặp theo tuần</button><button className="primary" onClick={() => { setTaskDate(calendarWeekStart); setModal("task"); }}>+ Lên việc</button></div></section>
             <section className="week-navigator panel"><div className="week-switch"><button aria-label="Tuần trước" onClick={() => setCalendarWeekStart((value) => addDays(value, -7))}>‹</button><div><span>{isCurrentCalendarWeek ? "TUẦN HIỆN TẠI" : "TUẦN ĐANG XEM"}</span><strong>{niceDate(calendarWeekStart, "")} — {niceDate(weekDates[6], "")}</strong></div><button aria-label="Tuần sau" onClick={() => setCalendarWeekStart((value) => addDays(value, 7))}>›</button></div><button className="week-today" disabled={isCurrentCalendarWeek} onClick={() => setCalendarWeekStart(mondayOf(today))}>Hôm nay</button></section>
             <section className="week-overview"><article><span>VIỆC TRONG TUẦN</span><strong>{weekTasks.length}</strong></article><article><span>ĐÃ HOÀN THÀNH</span><strong>{weekTasks.filter((task) => task.completed).length}</strong></article><article><span>CÒN LẠI</span><strong>{weekTasks.filter((task) => !task.completed).length}</strong></article><article><span>TRỌNG TÂM</span><strong>{weekTasks.filter((task) => task.priority === "high").length}</strong></article></section>
-            <section className="week-board">{weekDates.map((date) => { const items = scopedTasks.filter((task) => task.dueDate === date); const note = dayNotes.find((item) => item.noteDate === date); const isToday = date === today; return <article className={`day-column ${isToday ? "today" : ""}`} key={date}><header><span>{isToday ? "HÔM NAY" : new Intl.DateTimeFormat("vi-VN", { weekday: "short" }).format(new Date(`${date}T12:00:00`)).toUpperCase()}</span><strong>{Number(date.slice(8, 10))}</strong><small>THÁNG {Number(date.slice(5, 7))}</small><div className="day-menu"><button aria-label={`Thêm việc ngày ${date}`} onClick={() => { setTaskDate(date); setModal("task"); }}>+</button><button className={note?.content ? "has-note" : ""} aria-label={`Ghi chú ngày ${date}`} onClick={() => setOpenDayNote((value) => value === date ? null : date)}>⌑</button></div></header><div>{openDayNote === date && <DayNoteEditor date={date} initialValue={note?.content || ""} note={note} onClose={() => setOpenDayNote(null)} onSave={saveDayNote} onDelete={removeDayNote} />}{items.map((task) => <div className="week-task-wrap" key={task.id}><button className={`week-task ${task.completed ? "done" : ""}`} onClick={() => toggleTask(task)}><i>{task.completed ? "✓" : ""}</i><span>{task.title}<small>{plans.find((plan) => plan.id === task.planId)?.name || "Chung"}</small></span></button><button className="week-task-edit" aria-label={`Sửa ${task.title}`} onClick={() => beginEdit({ kind: "task", item: task })}>⌕</button><button className="week-task-delete" aria-label={`Xóa ${task.title}`} onClick={() => remove("task", task.id)}>×</button></div>)}{!items.length && !note?.content && <p className="free-day">Khoảng thở</p>}</div></article>})}</section>
+            <section className="week-board">{weekDates.map((date) => {
+              const items = scopedTasks.filter((task) => task.dueDate === date).sort((left, right) => left.sortOrder - right.sortOrder || left.id - right.id);
+              const note = dayNotes.find((item) => item.noteDate === date); const isToday = date === today;
+              return <article className={`day-column ${isToday ? "today" : ""}`} key={date}>
+                <header><span>{isToday ? "HÔM NAY" : new Intl.DateTimeFormat("vi-VN", { weekday: "short" }).format(new Date(`${date}T12:00:00`)).toUpperCase()}</span><strong>{Number(date.slice(8, 10))}</strong><small>THÁNG {Number(date.slice(5, 7))}</small><div className="day-menu"><button aria-label={`Thêm việc ngày ${date}`} onClick={() => { setTaskDate(date); setModal("task"); }}>+</button><button className={note?.content ? "has-note" : ""} aria-label={`Ghi chú ngày ${date}`} onClick={() => setOpenDayNote((value) => value === date ? null : date)}>⌑</button></div></header>
+                <div>{openDayNote === date && <DayNoteEditor date={date} initialValue={note?.content || ""} note={note} onClose={() => setOpenDayNote(null)} onSave={saveDayNote} onDelete={removeDayNote} />}{items.map((task) => <div className={`week-task-wrap ${draggingTaskId === task.id ? "dragging" : ""}`} key={task.id} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const sourceId = Number(event.dataTransfer.getData("text/plain")); if (sourceId) void reorderDayTasks(date, sourceId, task.id); setDraggingTaskId(null); }}><button className="week-task-handle" type="button" draggable aria-label={`Kéo để đổi thứ tự ${task.title}`} title="Kéo để đổi thứ tự" onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", String(task.id)); setDraggingTaskId(task.id); }} onDragEnd={() => setDraggingTaskId(null)}>⋮⋮</button><button className={`week-task ${task.completed ? "done" : ""}`} onClick={() => toggleTask(task)}><i>{task.completed ? "✓" : ""}</i><span>{task.title}<small>{plans.find((plan) => plan.id === task.planId)?.name || "Chung"}</small></span></button><button className="week-task-edit" aria-label={`Sửa ${task.title}`} onClick={() => beginEdit({ kind: "task", item: task })}>⌕</button><button className="week-task-delete" aria-label={`Xóa ${task.title}`} onClick={() => remove("task", task.id)}>×</button></div>)}{!items.length && !note?.content && <p className="free-day">Khoảng thở</p>}</div>
+              </article>;
+            })}</section>
             <section className="review-card"><span>REVIEW CUỐI TUẦN</span><h2>Ba câu hỏi giữ kế hoạch sống.</h2><div><p><b>01</b> Điều gì đã tiến triển?</p><p><b>02</b> Điều gì đang bị kẹt?</p><p><b>03</b> Tuần tới bỏ bớt điều gì?</p></div></section>
           </>}
 
